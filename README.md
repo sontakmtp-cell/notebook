@@ -5,6 +5,9 @@
 ## 1. Đặc điểm nổi bật
 - **Gọn nhẹ & Phản hồi tức thì**: Xây dựng bằng **C# / .NET 8 (hoặc mới hơn) / WPF** thuần và **Microsoft.Data.Sqlite**, không dùng ORM nặng, không dùng Electron hay trình duyệt nhúng.
 - **Hoạt động 100% Offline**: Không cần tài khoản, không kết nối Internet, dữ liệu lưu trực tiếp trên máy tại `%LocalAppData%\PromptNotebook\prompts.db`.
+- **Mật khẩu khi mở app**: Nhập đúng mật khẩu mới vào được danh sách prompt. App đọc file `.env` cạnh `PromptNotebook.exe`, hỗ trợ một dòng mật khẩu hoặc `APP_PASSWORD=mật_khẩu`. Khi build/publish, `.env` ở thư mục mã nguồn được chép cạnh bản chạy. Đây là khóa mở ứng dụng đơn giản, dữ liệu SQLite không được mã hóa.
+- **Kéo thả sắp xếp**: Kéo prompt lên/xuống trong danh sách, thả phía trên hoặc dưới một prompt khác. Thứ tự tự lưu và giữ nguyên khi mở lại app, kể cả khi đang lọc danh mục/yêu thích. Prompt mới được thêm lên đầu; không sắp xếp trong thùng rác.
+- **Tìm và thay thế trong nội dung**: `Ctrl+F` mở ô tìm trong prompt đang chọn, `Ctrl+H` mở thêm ô thay thế. Tìm không phân biệt hoa/thường; `Enter`/`F3` tìm tiếp, `Shift+Enter`/`Shift+F3` tìm trước và quay vòng khi tới cuối. Có **Thay** từng chỗ và **Thay tất cả** trong prompt đang mở, để trống chữ thay thế để xóa. Thay đổi được tự lưu; `Ctrl+Z` trong khung soạn thảo hoàn tác được cả lần thay tất cả. `Esc` đóng thanh tìm/thay. Ô tìm ở cột trái vẫn lọc danh sách prompt.
 - **Hỗ trợ đa ngôn ngữ Unicode đầy đủ**: Tiếng Việt, tiếng Anh và tiếng Trung (Giản thể / Phồn thể) không lỗi font, hỗ trợ tìm kiếm tức thì cả tên và nội dung.
 - **Giao diện 2 cột tối ưu (40% / 60%)**:
   - **Cột trái (40%)**: Thanh tìm kiếm tức thì, bộ lọc danh mục, lọc yêu thích, thùng rác, danh sách ảo hóa (`VirtualizingStackPanel`) cuộn mượt với hơn 5.000 prompt. Tên prompt dài (150–300+ ký tự) tự động xuống dòng (`TextWrapping="Wrap"`), không bị cắt chữ. Hỗ trợ menu chuột phải (*Đổi tên, Nhân bản, Yêu thích, Xóa/Khôi phục, Xóa vĩnh viễn*) và kéo `GridSplitter` thay đổi độ rộng cột (tự động ghi nhớ).
@@ -13,14 +16,16 @@
   - Xóa mềm vào **Thùng rác** và hỗ trợ khôi phục bất kỳ lúc nào.
   - Tự động sao lưu cơ sở dữ liệu bằng cơ chế Online Backup an toàn của SQLite tại `%LocalAppData%\PromptNotebook\Backups`, tự động giữ **7 bản sao lưu gần nhất**.
   - Hỗ trợ **Nhập / Xuất file JSON UTF-8**.
-  - **Nhập file TXT/Markdown**: Bấm **Nhập TXT/MD** để chọn nhiều file `.txt`/`.md` trong thư mục, hoặc kéo thả file vào bất kỳ vị trí nào trong cửa sổ. Mỗi file tạo một prompt mới, lấy tên file (bỏ phần mở rộng) làm tiêu đề và giữ nguyên nội dung, kể cả dấu xuống dòng. File Unicode UTF-8 và UTF-16/UTF-32 có BOM được hỗ trợ. Prompt được thêm vào danh mục đang lọc (hoặc **Chung** nếu đang xem tất cả); ứng dụng bỏ các bộ lọc sau khi nhập để hiển thị prompt mới. File lỗi được báo riêng và không cản các file hợp lệ; nhập lại cùng file sẽ tạo thêm prompt mới.
+  - **Nhập file chung một nút**: Bấm **Nhập file** để chọn nhiều file `.txt`/`.md`/`.json` cùng lúc, hoặc kéo thả file vào cửa sổ. Mỗi file TXT/MD tạo một prompt mới, lấy tên file (bỏ phần mở rộng) làm tiêu đề và giữ nguyên nội dung, kể cả dấu xuống dòng. JSON nhập danh sách prompt đã xuất. File Unicode UTF-8 và UTF-16/UTF-32 có BOM được hỗ trợ cho TXT/MD. Prompt TXT/MD được thêm vào danh mục đang lọc (hoặc **Chung** nếu đang xem tất cả); ứng dụng bỏ các bộ lọc sau khi nhập để hiển thị prompt mới. File lỗi được báo riêng và không cản các file hợp lệ; nhập lại cùng file sẽ tạo thêm prompt mới.
 - **Giao diện Tiếng Việt**: Mặc định **Dark Mode**, chuyển đổi nhanh sang **Light Mode**, sử dụng font `Segoe UI`, ghi nhớ kích thước và vị trí cửa sổ.
 
 ## 2. Phím tắt hỗ trợ
 | Phím tắt | Chức năng |
 | :--- | :--- |
 | `Ctrl + N` | Tạo prompt mới |
-| `Ctrl + F` | Đưa con trỏ vào ô tìm kiếm |
+| `Ctrl + F` | Tìm chữ trong nội dung prompt đang mở |
+| `Ctrl + H` | Tìm và thay thế chữ trong nội dung prompt đang mở |
+| `F3` / `Shift + F3` | Tìm kết quả tiếp / trước khi thanh tìm đang mở |
 | `Ctrl + S` | Lưu ngay lập tức |
 | `Ctrl + Shift + C` | Sao chép toàn bộ nội dung prompt đang chọn vào Clipboard |
 | `Delete` | Xóa prompt đang chọn vào thùng rác (có xác nhận) |

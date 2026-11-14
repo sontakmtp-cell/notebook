@@ -75,8 +75,8 @@
                                      CaretBrush="{DynamicResource PrimaryTextBrush}"
                                      BorderBrush="{DynamicResource BorderSubtleBrush}"
                                      BorderThickness="1"
-                                     ToolTip="Tìm kiếm tức thì theo tên và nội dung (Ctrl+F). Hỗ trợ tiếng Việt, Anh, Trung." />
-                            <TextBlock Text="Tìm kiếm tên hoặc nội dung (Ctrl+F)..."
+                                     ToolTip="Tìm prompt theo tên hoặc nội dung. Hỗ trợ tiếng Việt, Anh, Trung." />
+                            <TextBlock Text="Tìm prompt theo tên hoặc nội dung..."
                                        IsHitTestVisible="False"
                                        VerticalAlignment="Center"
                                        Margin="12,0,30,0"
@@ -363,6 +363,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -501,6 +502,15 @@
                                 ToolTip="Tăng cỡ chữ trình soạn thảo" />
                     </StackPanel>
 
+                    <Button Content="Tìm / Thay"
+                            IsEnabled="{Binding HasSelectedPrompt}"
+                            Click="OpenFindReplaceButton_Click"
+                            Margin="0,0,6,4" Padding="10,5" FontSize="12.5"
+                            Background="{DynamicResource SurfaceBrush}"
+                            Foreground="{DynamicResource PrimaryTextBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            ToolTip="Tìm trong nội dung (Ctrl+F), thay thế (Ctrl+H)" />
+
                     <!-- Nút Sao chép 1 click -->
                     <Button Content="📋 Sao chép nội dung"
                             Command="{Binding CopyContentCommand}"
@@ -516,8 +526,67 @@
                             ToolTip="Sao chép chính xác 100% nội dung vào Clipboard (Ctrl+Shift+C)" />
                 </WrapPanel>
 
-                <!-- Hàng 3: Khung Soạn thảo & Xem trước Markdown -->
-                <Grid Grid.Row="2">
+                <Border x:Name="FindBar" Grid.Row="2" Visibility="Collapsed"
+                        Margin="0,0,0,10" Padding="10"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                        BorderThickness="1" CornerRadius="6">
+                    <Border.Resources>
+                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                            <Setter Property="Padding" Value="8,5" />
+                            <Setter Property="Margin" Value="5,0,0,0" />
+                            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+                        </Style>
+                        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                            <Setter Property="Padding" Value="8,5" />
+                            <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+                            <Setter Property="CaretBrush" Value="{DynamicResource PrimaryTextBrush}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+                        </Style>
+                    </Border.Resources>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="55" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Tìm:" VerticalAlignment="Center" />
+                            <TextBox x:Name="FindTextBox" Grid.Column="1"
+                                     TextChanged="FindTextBox_TextChanged"
+                                     PreviewKeyDown="FindTextBox_PreviewKeyDown"
+                                     ToolTip="Nhập chữ cần tìm. Enter: tìm tiếp; Shift+Enter: tìm trước." />
+                            <Button Grid.Column="2" Content="↑" Click="FindPreviousButton_Click" ToolTip="Kết quả trước (Shift+F3)" />
+                            <Button Grid.Column="3" Content="↓" Click="FindNextButton_Click" ToolTip="Kết quả tiếp (F3)" />
+                            <Button Grid.Column="4" Content="✕" Click="CloseFindBarButton_Click" ToolTip="Đóng (Esc)" />
+                        </Grid>
+                        <Grid x:Name="ReplaceRow" Margin="0,8,0,0" Visibility="Collapsed"
+                              IsEnabled="{Binding IsEditorEnabled}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="55" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Thay:" VerticalAlignment="Center" />
+                            <TextBox x:Name="ReplaceTextBox" Grid.Column="1"
+                                     PreviewKeyDown="ReplaceTextBox_PreviewKeyDown"
+                                     ToolTip="Chữ thay thế. Để trống để xóa chữ tìm được." />
+                            <Button Grid.Column="2" Content="Thay" Click="ReplaceButton_Click" ToolTip="Thay kết quả hiện tại rồi tìm tiếp" />
+                            <Button Grid.Column="3" Content="Thay tất cả" Click="ReplaceAllButton_Click" ToolTip="Chỉ thay trong prompt đang mở; Ctrl+Z để hoàn tác" />
+                        </Grid>
+                        <TextBlock x:Name="FindStatusText" Margin="55,6,0,0" FontSize="12"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Khung Soạn thảo & Xem trước Markdown -->
+                <Grid Grid.Row="3">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition>
                             <ColumnDefinition.Style>
@@ -560,6 +629,8 @@
                              VerticalScrollBarVisibility="Auto"
                              HorizontalScrollBarVisibility="Disabled"
                              UndoLimit="200"
+                             IsInactiveSelectionHighlightEnabled="True"
+                             TextChanged="ContentEditorTextBox_TextChanged"
                              Padding="12,10"
                              Background="{DynamicResource SurfaceBrush}"
                              Foreground="{DynamicResource PrimaryTextBrush}"

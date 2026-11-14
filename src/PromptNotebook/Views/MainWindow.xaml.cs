@@ -86,11 +86,21 @@ public partial class MainWindow : Window
 
     private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // Ctrl+F -> đưa con trỏ vào thanh tìm kiếm
-        if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        // Ctrl+F / Ctrl+H: tìm và thay thế trong nội dung prompt đang mở.
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.F or Key.H)
         {
-            SearchTextBox.Focus();
-            SearchTextBox.SelectAll();
+            if (_viewModel.HasSelectedPrompt)
+                OpenFindBar(showReplace: e.Key == Key.H);
+            else if (e.Key == Key.F)
+                SearchTextBox.Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F3 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift &&
+            FindBar.Visibility == Visibility.Visible)
+        {
+            FindMatch(backwards: Keyboard.Modifiers == ModifierKeys.Shift);
             e.Handled = true;
             return;
         }
@@ -98,7 +108,10 @@ public partial class MainWindow : Window
         // Phím Esc -> xóa từ khóa tìm kiếm hoặc bỏ chọn prompt
         if (e.Key == Key.Escape)
         {
-            _viewModel.ExecuteEscapeKey();
+            if (FindBar.Visibility == Visibility.Visible)
+                CloseFindBar();
+            else
+                _viewModel.ExecuteEscapeKey();
             e.Handled = true;
             return;
         }
