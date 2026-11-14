@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using PromptNotebook.Services;
@@ -8,31 +9,34 @@ namespace PromptNotebook;
 
 public partial class App : Application
 {
+    private static string ErrorLogPath => Path.Combine(AppPaths.AppDataDirectory, "error.log");
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        var logPath = System.IO.Path.Combine(AppPaths.AppDataDirectory, "startup.log");
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            try
-            {
-                System.IO.File.AppendAllText(logPath, $"AppDomain.UnhandledException: {args.ExceptionObject}\n");
-            }
-            catch { }
+            LogError($"AppDomain.UnhandledException: {args.ExceptionObject}");
         };
+
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
 
         try
         {
-            System.IO.File.WriteAllText(logPath, $"Starting at {DateTime.Now:O}\n");
-
-            // Bắt các lỗi ngoại lệ không mong muốn để không sập ứng dụng đột ngột
-            DispatcherUnhandledException += OnDispatcherUnhandledException;
-
             var settingsService = new SettingsService();
             var settings = settingsService.Load();
 
             ApplyTheme(settings.IsDarkMode);
+
+            // Đóng hộp đăng nhập chưa được tắt app trước khi cửa sổ chính xuất hiện.
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var passwordService = new PasswordService(Path.Combine(AppContext.BaseDirectory, ".env"));
+            if (new LoginWindow(passwordService).ShowDialog() != true)
+            {
+                Shutdown();
+                return;
+            }
 
             var dbService = new DatabaseService();
             dbService.InitializeDatabase();
@@ -41,40 +45,22 @@ public partial class App : Application
             var viewModel = new MainViewModel(dbService, settingsService, jsonService, settings);
 
             var mainWindow = new MainWindow(viewModel, settingsService, settings);
-            mainWindow.Closing += (_, _) =>
-            {
-                try { System.IO.File.AppendAllText(logPath, $"MainWindow.Closing at {DateTime.Now:O}\n"); } catch { }
-            };
-            mainWindow.Closed += (_, _) =>
-            {
-                try { System.IO.File.AppendAllText(logPath, $"MainWindow.Closed at {DateTime.Now:O}\n"); } catch { }
-            };
-
             MainWindow = mainWindow;
+            ShutdownMode = ShutdownMode.OnMainWindowClose;
             mainWindow.Show();
 
-            var handle = new System.Windows.Interop.WindowInteropHelper(mainWindow).Handle;
-            System.IO.File.AppendAllText(logPath, $"MainWindow Handle: 0x{handle:X}, Title: '{mainWindow.Title}', Visibility: {mainWindow.Visibility}\n");
-
             viewModel.Initialize(settings.LastSelectedPromptId);
-            System.IO.File.AppendAllText(logPath, $"Startup finished successfully at {DateTime.Now:O}\n");
         }
         catch (Exception ex)
         {
-            System.IO.File.AppendAllText(logPath, $"ERROR in OnStartup:\n{ex}\n");
-            throw;
+            LogError($"OnStartup: {ex}");
+            MessageBox.Show(
+                $"Không thể khởi động ứng dụng:\n{ex.Message}",
+                "Prompt Notebook",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown(1);
         }
-    }
-
-    protected override void OnExit(ExitEventArgs e)
-    {
-        base.OnExit(e);
-        var logPath = System.IO.Path.Combine(AppPaths.AppDataDirectory, "startup.log");
-        try
-        {
-            System.IO.File.AppendAllText(logPath, $"App.OnExit with code {e.ApplicationExitCode} at {DateTime.Now:O}\n");
-        }
-        catch { }
     }
 
     public static void ApplyTheme(bool isDarkMode)
@@ -100,12 +86,7 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        var logPath = System.IO.Path.Combine(AppPaths.AppDataDirectory, "startup.log");
-        try
-        {
-            System.IO.File.AppendAllText(logPath, $"DispatcherUnhandledException: {e.Exception}\n");
-        }
-        catch { }
+        LogError($"DispatcherUnhandledException: {e.Exception}");
 
         e.Handled = true;
         MessageBox.Show(
@@ -113,5 +94,17 @@ public partial class App : Application
             "Prompt Notebook",
             MessageBoxButton.OK,
             MessageBoxImage.Error);
+    }
+
+    private static void LogError(string message)
+    {
+        try
+        {
+            File.AppendAllText(ErrorLogPath, $"[{DateTime.Now:O}] {message}\n");
+        }
+        catch
+        {
+            // Bỏ qua nếu không thể ghi file log
+        }
     }
 }

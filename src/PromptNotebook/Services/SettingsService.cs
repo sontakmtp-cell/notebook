@@ -67,6 +67,9 @@ public sealed class SettingsService
         if (s.EditorFontSize < 10 || s.EditorFontSize > 36)
             s.EditorFontSize = 14.0;
 
+        if (s.EditorViewMode is not ("Edit" or "Split" or "Preview"))
+            s.EditorViewMode = "Split";
+
         if (s.LeftColumnWidthRatio < 15 || s.LeftColumnWidthRatio > 75)
             s.LeftColumnWidthRatio = 40.0;
 

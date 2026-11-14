@@ -23,6 +23,9 @@ TestResults/
 *.db-wal
 *.log
 startup.log
+.env
+.env.*
+!.env.example
 
 ## OS Generated
 Thumbs.db

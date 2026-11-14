@@ -1,7 +1,11 @@
 using System.ComponentModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Win32;
 using PromptNotebook.Models;
 using PromptNotebook.Services;
@@ -12,18 +16,19 @@ namespace PromptNotebook.Views;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
-    private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
-    private readonly DatabaseService _dbService;
+    private const string PromptDragFormat = "PromptNotebook.Prompt";
+    private Point _dragStart;
+    private PromptItem? _draggedPrompt;
+    private InsertionAdorner? _insertionAdorner;
 
     public MainWindow(MainViewModel viewModel, SettingsService settingsService, AppSettings settings)
     {
         InitializeComponent();
 
         _viewModel = viewModel;
-        _settingsService = settingsService;
         _settings = settings;
-        _dbService = new DatabaseService();
+        _ = settingsService;
 
         DataContext = _viewModel;
 
@@ -142,21 +147,7 @@ public partial class MainWindow : Window
 
         if (dialog.ShowDialog() == true)
         {
-            var newTitle = dialog.PromptTitle;
-            var newCategory = string.IsNullOrWhiteSpace(dialog.PromptCategory) ? "Chung" : dialog.PromptCategory;
-
-            item.Title = newTitle;
-            item.Category = newCategory;
-            item.UpdatedAt = _dbService.UpdateMetadataOnly(item.Id, newTitle, newCategory, item.IsFavorite);
-
-            if (ReferenceEquals(item, _viewModel.SelectedPrompt))
-            {
-                _viewModel.EditingTitle = newTitle;
-                _viewModel.EditingCategory = newCategory;
-                _viewModel.FlushPendingSave();
-            }
-
-            _viewModel.ReloadCategories();
+            _viewModel.RenamePrompt(item, dialog.PromptTitle, dialog.PromptCategory);
         }
     }
 
@@ -184,6 +175,15 @@ public partial class MainWindow : Window
         if (item is not null)
         {
             _viewModel.ExecuteDeleteOrRestorePrompt(item);
+        }
+    }
+
+    private void ContextMenu_PermanentDelete_Click(object sender, RoutedEventArgs e)
+    {
+        var item = GetPromptFromMenuItem(sender) ?? _viewModel.SelectedPrompt;
+        if (item is not null)
+        {
+            _viewModel.ExecutePermanentDelete(item);
         }
     }
 
@@ -221,41 +221,220 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ImportJsonButton_Click(object sender, RoutedEventArgs e)
+    private async void ImportFilesButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!_viewModel.CanImportTextFiles)
+            return;
+
         var dialog = new OpenFileDialog
         {
-            Title = "Nhập dữ liệu Prompt từ file JSON UTF-8",
-            Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
-            DefaultExt = ".json"
+            Title = "Nhập prompt từ file TXT, Markdown hoặc JSON",
+            Filter = "File prompt (*.txt;*.md;*.json)|*.txt;*.md;*.json|TXT và Markdown (*.txt;*.md)|*.txt;*.md|JSON (*.json)|*.json",
+            Multiselect = true,
+            CheckFileExists = true
         };
 
         if (dialog.ShowDialog(this) == true)
+            await ImportFilesAsync(dialog.FileNames);
+    }
+
+    private void PromptList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _draggedPrompt = null;
+        // Giữ thao tác bấm ngôi sao và thanh cuộn như bình thường.
+        for (var element = e.OriginalSource as DependencyObject; element is not null;
+             element = VisualTreeHelper.GetParent(element))
+        {
+            if (element is ButtonBase or ScrollBar) return;
+            if (element is ListBoxItem { DataContext: PromptItem item })
+            {
+                _dragStart = e.GetPosition(PromptListBox);
+                _draggedPrompt = item;
+                return;
+            }
+            if (element == PromptListBox) return;
+        }
+    }
+
+    private void PromptList_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _viewModel.IsTrashView || !_viewModel.CanImportTextFiles)
+        {
+            _draggedPrompt = null;
+            return;
+        }
+        if (_draggedPrompt is null) return;
+        var position = e.GetPosition(PromptListBox);
+        if (Math.Abs(position.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(position.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+
+        var source = _draggedPrompt;
+        _draggedPrompt = null;
+        try
+        {
+            DragDrop.DoDragDrop(PromptListBox, new DataObject(PromptDragFormat, source), DragDropEffects.Move);
+        }
+        finally { ClearInsertionMarker(); }
+    }
+
+    private ListBoxItem? GetDropTarget(DragEventArgs e)
+    {
+        var hit = PromptListBox.InputHitTest(e.GetPosition(PromptListBox)) as DependencyObject;
+        return hit is null ? null : ItemsControl.ContainerFromElement(PromptListBox, hit) as ListBoxItem;
+    }
+
+    private void PromptList_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(PromptDragFormat)) return;
+        e.Handled = true;
+        e.Effects = DragDropEffects.None;
+        ClearInsertionMarker();
+        if (_viewModel.IsTrashView || !_viewModel.CanImportTextFiles) return;
+
+        var target = GetDropTarget(e);
+        if (target?.DataContext is not PromptItem item ||
+            e.Data.GetData(PromptDragFormat) is not PromptItem source || item.Id == source.Id) return;
+
+        e.Effects = DragDropEffects.Move;
+        var after = e.GetPosition(target).Y >= target.ActualHeight / 2;
+        var layer = AdornerLayer.GetAdornerLayer(target);
+        if (layer is not null)
+        {
+            _insertionAdorner = new InsertionAdorner(target, after,
+                (Brush)FindResource("AccentBrush"));
+            layer.Add(_insertionAdorner);
+        }
+
+        // Cuộn từng mục khi kéo sát mép danh sách dài.
+        var y = e.GetPosition(PromptListBox).Y;
+        var index = PromptListBox.Items.IndexOf(item);
+        if (y < 28 && index > 0) PromptListBox.ScrollIntoView(PromptListBox.Items[index - 1]);
+        else if (y > PromptListBox.ActualHeight - 28 && index < PromptListBox.Items.Count - 1)
+            PromptListBox.ScrollIntoView(PromptListBox.Items[index + 1]);
+    }
+
+    private void PromptList_PreviewDragLeave(object sender, DragEventArgs e) => ClearInsertionMarker();
+
+    private void PromptList_PreviewDrop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(PromptDragFormat)) return;
+        e.Handled = true;
+        e.Effects = DragDropEffects.None;
+        ClearInsertionMarker();
+        if (_viewModel.IsTrashView || !_viewModel.CanImportTextFiles) return;
+        if (GetDropTarget(e) is ListBoxItem { DataContext: PromptItem target } container &&
+            e.Data.GetData(PromptDragFormat) is PromptItem source && source.Id != target.Id)
+        {
+            _viewModel.MovePrompt(source, target, e.GetPosition(container).Y >= container.ActualHeight / 2);
+            e.Effects = DragDropEffects.Move;
+        }
+    }
+
+    private void ClearInsertionMarker()
+    {
+        if (_insertionAdorner is null) return;
+        AdornerLayer.GetAdornerLayer(_insertionAdorner.AdornedElement)?.Remove(_insertionAdorner);
+        _insertionAdorner = null;
+    }
+
+    private sealed class InsertionAdorner(UIElement element, bool after, Brush brush) : Adorner(element)
+    {
+        protected override void OnRender(DrawingContext drawingContext)
+        {
+            IsHitTestVisible = false;
+            var y = after ? AdornedElement.RenderSize.Height : 0;
+            drawingContext.DrawLine(new Pen(brush, 3), new Point(0, y),
+                new Point(AdornedElement.RenderSize.Width, y));
+        }
+    }
+
+    private static bool IsSupportedImportFile(string path) => TextFileImportService.IsSupportedFile(path) ||
+        string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
+
+    private void MainWindow_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+            return;
+
+        var paths = e.Data.GetData(DataFormats.FileDrop) as string[];
+        var canImport = _viewModel.CanImportTextFiles &&
+                        (e.AllowedEffects & DragDropEffects.Copy) != 0 &&
+                        paths is not null && paths.Any(path => IsSupportedImportFile(path) && File.Exists(path));
+        e.Effects = canImport ? DragDropEffects.Copy : DragDropEffects.None;
+        FileDropOverlay.Visibility = canImport ? Visibility.Visible : Visibility.Collapsed;
+        // Xử lý từ cửa sổ trước TextBox để file luôn tạo prompt mới.
+        e.Handled = true;
+    }
+
+    private void MainWindow_PreviewDragLeave(object sender, DragEventArgs e)
+    {
+        FileDropOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private async void MainWindow_PreviewDrop(object sender, DragEventArgs e)
+    {
+        FileDropOverlay.Visibility = Visibility.Collapsed;
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+            return;
+
+        e.Handled = true;
+        e.Effects = DragDropEffects.None;
+        if (_viewModel.CanImportTextFiles &&
+            (e.AllowedEffects & DragDropEffects.Copy) != 0 &&
+            e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        {
+            e.Effects = DragDropEffects.Copy;
+            await ImportFilesAsync(paths);
+        }
+    }
+
+    private async Task ImportFilesAsync(string[] paths)
+    {
+        var errors = new List<string>();
+        var count = 0;
+        var uniquePaths = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var textPaths = uniquePaths.Where(path => !string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase)).ToArray();
+        try
+        {
+            if (textPaths.Length > 0)
+            {
+                var result = await _viewModel.ImportTextFilesAsync(textPaths);
+                count += result.ImportedCount;
+                errors.AddRange(result.Errors.Select(error => $"• {Path.GetFileName(error.FilePath)}: {error.Message}"));
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"• TXT/MD: {ex.Message}");
+        }
+        foreach (var path in uniquePaths.Except(textPaths, StringComparer.OrdinalIgnoreCase))
         {
             try
             {
-                var count = _viewModel.ImportJson(dialog.FileName);
-                MessageBox.Show(
-                    this,
-                    $"Đã nhập thành công {count:N0} prompt vào cơ sở dữ liệu.",
-                    "Nhập JSON thành công",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+                count += _viewModel.ImportJson(path);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    this,
-                    $"Lỗi khi nhập file JSON:\n{ex.Message}",
-                    "Lỗi nhập dữ liệu",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                errors.Add($"• {Path.GetFileName(path)}: {ex.Message}");
             }
         }
+
+        var details = errors.Count == 0 ? string.Empty : "\n\n" + string.Join("\n", errors.Take(10));
+        if (errors.Count > 10) details += $"\n... và {errors.Count - 10:N0} lỗi khác.";
+        MessageBox.Show(this, $"Đã nhập {count:N0} prompt." + details, "Nhập file",
+            MessageBoxButton.OK, errors.Count == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        if (_viewModel.IsImportingTextFiles)
+        {
+            e.Cancel = true;
+            MessageBox.Show(this, "Đang nhập file. Vui lòng chờ hoàn tất trước khi đóng ứng dụng.",
+                "Prompt Notebook", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         // Ghi nhớ vị trí, kích thước cửa sổ và độ rộng cột
         _settings.IsMaximized = WindowState == WindowState.Maximized;
         if (WindowState == WindowState.Normal)

@@ -7,12 +7,13 @@
 - **Hoạt động 100% Offline**: Không cần tài khoản, không kết nối Internet, dữ liệu lưu trực tiếp trên máy tại `%LocalAppData%\PromptNotebook\prompts.db`.
 - **Hỗ trợ đa ngôn ngữ Unicode đầy đủ**: Tiếng Việt, tiếng Anh và tiếng Trung (Giản thể / Phồn thể) không lỗi font, hỗ trợ tìm kiếm tức thì cả tên và nội dung.
 - **Giao diện 2 cột tối ưu (40% / 60%)**:
-  - **Cột trái (40%)**: Thanh tìm kiếm tức thì, bộ lọc danh mục, lọc yêu thích, thùng rác, danh sách ảo hóa (`VirtualizingStackPanel`) cuộn mượt với более 5.000 prompt. Tên prompt dài (150–300+ ký tự) tự động xuống dòng (`TextWrapping="Wrap"`), không bị cắt chữ. Hỗ trợ menu chuột phải (*Đổi tên, Nhân bản, Yêu thích, Xóa/Khôi phục*) và kéo `GridSplitter` thay đổi độ rộng cột (tự động ghi nhớ).
+  - **Cột trái (40%)**: Thanh tìm kiếm tức thì, bộ lọc danh mục, lọc yêu thích, thùng rác, danh sách ảo hóa (`VirtualizingStackPanel`) cuộn mượt với hơn 5.000 prompt. Tên prompt dài (150–300+ ký tự) tự động xuống dòng (`TextWrapping="Wrap"`), không bị cắt chữ. Hỗ trợ menu chuột phải (*Đổi tên, Nhân bản, Yêu thích, Xóa/Khôi phục, Xóa vĩnh viễn*) và kéo `GridSplitter` thay đổi độ rộng cột (tự động ghi nhớ).
   - **Cột phải (60%)**: Hiển thị tên đầy đủ, trình soạn thảo văn bản thuần nhiều dòng, tự động lưu sau **700ms** ngừng gõ, lưu tức thì khi chuyển prompt hoặc đóng ứng dụng, hiển thị trạng thái *Đang lưu... / Đã lưu*, nút **Sao chép nội dung** 1 click, chỉnh cỡ chữ (`A-` / `A+`).
 - **An toàn dữ liệu**:
   - Xóa mềm vào **Thùng rác** và hỗ trợ khôi phục bất kỳ lúc nào.
   - Tự động sao lưu cơ sở dữ liệu bằng cơ chế Online Backup an toàn của SQLite tại `%LocalAppData%\PromptNotebook\Backups`, tự động giữ **7 bản sao lưu gần nhất**.
   - Hỗ trợ **Nhập / Xuất file JSON UTF-8**.
+  - **Nhập file TXT/Markdown**: Bấm **Nhập TXT/MD** để chọn nhiều file `.txt`/`.md` trong thư mục, hoặc kéo thả file vào bất kỳ vị trí nào trong cửa sổ. Mỗi file tạo một prompt mới, lấy tên file (bỏ phần mở rộng) làm tiêu đề và giữ nguyên nội dung, kể cả dấu xuống dòng. File Unicode UTF-8 và UTF-16/UTF-32 có BOM được hỗ trợ. Prompt được thêm vào danh mục đang lọc (hoặc **Chung** nếu đang xem tất cả); ứng dụng bỏ các bộ lọc sau khi nhập để hiển thị prompt mới. File lỗi được báo riêng và không cản các file hợp lệ; nhập lại cùng file sẽ tạo thêm prompt mới.
 - **Giao diện Tiếng Việt**: Mặc định **Dark Mode**, chuyển đổi nhanh sang **Light Mode**, sử dụng font `Segoe UI`, ghi nhớ kích thước và vị trí cửa sổ.
 
 ## 2. Phím tắt hỗ trợ
@@ -62,7 +63,7 @@ PromptNotebook/
 ├── README.md                          # Tài liệu hướng dẫn tiếng Việt
 ├── src/
 │   └── PromptNotebook/
-│       ├── PromptNotebook.csproj      # Cấu hình project .NET 10 WPF (win-x64)
+│       ├── PromptNotebook.csproj      # Cấu hình project .NET 8 WPF (win-x64)
 │       ├── App.xaml / App.xaml.cs     # Điểm khởi chạy, nạp theme & xử lý lỗi toàn cục
 │       ├── Helpers/
 │       │   ├── ObservableObject.cs    # Lớp cơ sở INotifyPropertyChanged tối giản

@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:helpers="clr-namespace:PromptNotebook.Helpers"
         mc:Ignorable="d"
         Title="Prompt Notebook"
         Width="1180"
@@ -14,6 +15,10 @@
         Foreground="{DynamicResource PrimaryTextBrush}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
+        AllowDrop="True"
+        PreviewDragOver="MainWindow_PreviewDragOver"
+        PreviewDragLeave="MainWindow_PreviewDragLeave"
+        PreviewDrop="MainWindow_PreviewDrop"
         PreviewKeyDown="MainWindow_PreviewKeyDown"
         Closing="MainWindow_Closing">
 
@@ -21,6 +26,7 @@
     <Window.InputBindings>
         <KeyBinding Modifiers="Ctrl" Key="N" Command="{Binding NewPromptCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="S" Command="{Binding SaveNowCommand}" />
+        <KeyBinding Modifiers="Ctrl" Key="M" Command="{Binding TogglePreviewCommand}" />
         <KeyBinding Modifiers="Ctrl+Shift" Key="C" Command="{Binding CopyContentCommand}" />
     </Window.InputBindings>
 
@@ -62,7 +68,7 @@
                             <TextBox x:Name="SearchTextBox"
                                      Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
                                      FontSize="13.5"
-                                     Padding="10,7,28,7"
+                                     Padding="10,7,30,7"
                                      VerticalContentAlignment="Center"
                                      Background="{DynamicResource SurfaceBrush}"
                                      Foreground="{DynamicResource PrimaryTextBrush}"
@@ -87,6 +93,21 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
+                            <Button Content="✕"
+                                    Command="{Binding ClearSearchCommand}"
+                                    Visibility="{Binding HasSearchKeyword, Converter={StaticResource BoolToVis}}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Width="24"
+                                    Height="24"
+                                    Margin="0,0,4,0"
+                                    Padding="0"
+                                    FontSize="11"
+                                    Background="Transparent"
+                                    Foreground="{DynamicResource SecondaryTextBrush}"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    ToolTip="Xóa từ khóa tìm kiếm (Esc)" />
                         </Grid>
 
                         <Button Grid.Column="1"
@@ -149,6 +170,13 @@
                              Grid.Row="2"
                              ItemsSource="{Binding Prompts}"
                              SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+                             AllowDrop="True"
+                             PreviewMouseLeftButtonDown="PromptList_PreviewMouseLeftButtonDown"
+                             PreviewMouseMove="PromptList_PreviewMouseMove"
+                             PreviewDragOver="PromptList_PreviewDragOver"
+                             PreviewDragLeave="PromptList_PreviewDragLeave"
+                             PreviewDrop="PromptList_PreviewDrop"
+                             ToolTip="Kéo một prompt lên hoặc xuống để đổi thứ tự. Thứ tự được lưu tự động."
                              Background="Transparent"
                              BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -194,8 +222,9 @@
 
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Grid Background="Transparent" Tag="{Binding}">
-                                    <!-- Menu chuột phải: Đổi tên, Nhân bản, Xóa / Khôi phục, Yêu thích -->
+                                <Grid Background="Transparent"
+                                      Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                                    <!-- Menu chuột phải: Đổi tên, Nhân bản, Xóa / Khôi phục, Xóa vĩnh viễn, Yêu thích -->
                                     <Grid.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="Đổi tên..." Click="ContextMenu_Rename_Click" />
@@ -203,6 +232,9 @@
                                             <MenuItem Header="Yêu thích / Bỏ yêu thích" Click="ContextMenu_Favorite_Click" />
                                             <Separator />
                                             <MenuItem Header="Xóa / Khôi phục" Click="ContextMenu_DeleteOrRestore_Click" />
+                                            <MenuItem Header="Xóa vĩnh viễn"
+                                                      Click="ContextMenu_PermanentDelete_Click"
+                                                      Visibility="{Binding PlacementTarget.Tag.IsTrashView, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource BoolToVis}}" />
                                         </ContextMenu>
                                     </Grid.ContextMenu>
 
@@ -256,7 +288,7 @@
 
                     <!-- Hàng 4: Thanh công cụ dữ liệu (Nhập / Xuất JSON UTF-8, Sao lưu, Dọn thùng rác, Sáng/Tối) -->
                     <WrapPanel Grid.Row="3" Margin="0,8,0,0" Orientation="Horizontal">
-                        <Button Content="Nhập JSON"
+                        <Button Content="Nhập file"
                                 Padding="9,5"
                                 Margin="0,0,6,4"
                                 FontSize="12"
@@ -264,8 +296,9 @@
                                 Foreground="{DynamicResource PrimaryTextBrush}"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}"
                                 Cursor="Hand"
-                                Click="ImportJsonButton_Click"
-                                ToolTip="Nhập danh sách prompt từ file JSON UTF-8" />
+                                IsEnabled="{Binding CanImportTextFiles}"
+                                Click="ImportFilesButton_Click"
+                                ToolTip="Chọn một hoặc nhiều file TXT, Markdown, JSON; hoặc kéo thả file vào cửa sổ." />
 
                         <Button Content="Xuất JSON"
                                 Padding="9,5"
@@ -323,7 +356,7 @@
                           ShowsPreview="False"
                           Cursor="SizeWE" />
 
-            <!-- ==================== CỘT PHẢI: TRÌNH CHỈNH SỬA (60%) ==================== -->
+            <!-- ==================== CỘT PHẢI: TRÌNH CHỈNH SỬA & MARKDOWN (60%) ==================== -->
             <Grid Grid.Column="2"
                   Background="{DynamicResource EditorBackgroundBrush}"
                   Margin="16,12,16,12">
@@ -351,40 +384,30 @@
                              ToolTip="Tên đầy đủ của prompt đang chọn (tự động xuống dòng khi tên dài)" />
                 </Grid>
 
-                <!-- Hàng 2: Thanh điều khiển trình chỉnh sửa (Danh mục, Yêu thích, Cỡ chữ, Trạng thái lưu, Nút Sao chép) -->
-                <Grid Grid.Row="1" Margin="0,0,0,10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="170" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+                <!-- Hàng 2: Thanh điều khiển trình chỉnh sửa (Danh mục, Yêu thích, Chế độ Markdown, Cỡ chữ, Nút Sao chép) -->
+                <WrapPanel Grid.Row="1" Margin="0,0,0,10" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,4">
+                        <TextBlock Text="Danh mục:"
+                                   VerticalAlignment="Center"
+                                   FontSize="12.5"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Margin="0,0,6,0" />
 
-                    <TextBlock Grid.Column="0"
-                               Text="Danh mục:"
-                               VerticalAlignment="Center"
-                               FontSize="12.5"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
-                               Margin="0,0,6,0" />
+                        <ComboBox Width="150"
+                                  ItemsSource="{Binding EditableCategories}"
+                                  Text="{Binding EditingCategory, UpdateSourceTrigger=PropertyChanged}"
+                                  IsEditable="True"
+                                  IsEnabled="{Binding IsEditorEnabled}"
+                                  FontSize="12.5"
+                                  Padding="6,4"
+                                  VerticalContentAlignment="Center"
+                                  ToolTip="Chọn hoặc nhập tên danh mục mới" />
+                    </StackPanel>
 
-                    <ComboBox Grid.Column="1"
-                              ItemsSource="{Binding EditableCategories}"
-                              Text="{Binding EditingCategory, UpdateSourceTrigger=PropertyChanged}"
-                              IsEditable="True"
-                              IsEnabled="{Binding IsEditorEnabled}"
-                              FontSize="12.5"
-                              Padding="6,4"
-                              VerticalContentAlignment="Center"
-                              ToolTip="Chọn hoặc nhập tên danh mục mới" />
-
-                    <Button Grid.Column="2"
-                            Content="{Binding EditingFavoriteText}"
+                    <Button Content="{Binding EditingFavoriteText}"
                             Command="{Binding ToggleFavoriteCommand}"
                             IsEnabled="{Binding HasSelectedPrompt}"
-                            Margin="8,0,0,0"
+                            Margin="0,0,6,4"
                             Padding="10,5"
                             FontSize="12.5"
                             Background="{DynamicResource SurfaceBrush}"
@@ -392,11 +415,10 @@
                             BorderBrush="{DynamicResource BorderSubtleBrush}"
                             Cursor="Hand" />
 
-                    <Button Grid.Column="3"
-                            Content="{Binding DeleteButtonText}"
+                    <Button Content="{Binding DeleteButtonText}"
                             Command="{Binding DeleteOrRestorePromptCommand}"
                             IsEnabled="{Binding HasSelectedPrompt}"
-                            Margin="8,0,0,0"
+                            Margin="0,0,10,4"
                             Padding="10,5"
                             FontSize="12.5"
                             Background="{DynamicResource SurfaceBrush}"
@@ -405,11 +427,47 @@
                             Cursor="Hand"
                             ToolTip="Xóa vào thùng rác (Delete) hoặc khôi phục" />
 
-                    <!-- Thay đổi cỡ chữ của trình chỉnh sửa -->
-                    <StackPanel Grid.Column="5"
-                                Orientation="Horizontal"
-                                VerticalAlignment="Center"
-                                Margin="0,0,12,0">
+                    <!-- Bộ chuyển chế độ Soạn thảo / Chia đôi / Xem trước Markdown (Ctrl+M) -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,4">
+                        <ToggleButton Content="Soạn thảo"
+                                      IsChecked="{Binding IsEditMode, Mode=OneWay}"
+                                      Command="{Binding SetViewModeCommand}"
+                                      CommandParameter="Edit"
+                                      Padding="9,5"
+                                      Margin="0,0,3,0"
+                                      FontSize="12"
+                                      Background="{DynamicResource SurfaceBrush}"
+                                      Foreground="{DynamicResource PrimaryTextBrush}"
+                                      BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                      Cursor="Hand"
+                                      ToolTip="Chỉ hiển thị khung soạn thảo văn bản thuần (Ctrl+M)" />
+                        <ToggleButton Content="Chia đôi"
+                                      IsChecked="{Binding IsSplitMode, Mode=OneWay}"
+                                      Command="{Binding SetViewModeCommand}"
+                                      CommandParameter="Split"
+                                      Padding="9,5"
+                                      Margin="0,0,3,0"
+                                      FontSize="12"
+                                      Background="{DynamicResource SurfaceBrush}"
+                                      Foreground="{DynamicResource PrimaryTextBrush}"
+                                      BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                      Cursor="Hand"
+                                      ToolTip="Hiển thị song song Soạn thảo và Xem trước Markdown (Ctrl+M)" />
+                        <ToggleButton Content="Xem trước"
+                                      IsChecked="{Binding IsPreviewMode, Mode=OneWay}"
+                                      Command="{Binding SetViewModeCommand}"
+                                      CommandParameter="Preview"
+                                      Padding="9,5"
+                                      FontSize="12"
+                                      Background="{DynamicResource SurfaceBrush}"
+                                      Foreground="{DynamicResource PrimaryTextBrush}"
+                                      BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                      Cursor="Hand"
+                                      ToolTip="Chỉ hiển thị bản xem trước Markdown (Ctrl+M)" />
+                    </StackPanel>
+
+                    <!-- Thay đổi cỡ chữ của trình chỉnh sửa & xem trước -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,4">
                         <TextBlock Text="Cỡ chữ:"
                                    VerticalAlignment="Center"
                                    FontSize="12"
@@ -444,10 +502,10 @@
                     </StackPanel>
 
                     <!-- Nút Sao chép 1 click -->
-                    <Button Grid.Column="6"
-                            Content="📋 Sao chép nội dung"
+                    <Button Content="📋 Sao chép nội dung"
                             Command="{Binding CopyContentCommand}"
                             IsEnabled="{Binding HasSelectedPrompt}"
+                            Margin="0,0,0,4"
                             Padding="14,6"
                             FontSize="13"
                             FontWeight="SemiBold"
@@ -456,27 +514,101 @@
                             BorderThickness="0"
                             Cursor="Hand"
                             ToolTip="Sao chép chính xác 100% nội dung vào Clipboard (Ctrl+Shift+C)" />
-                </Grid>
+                </WrapPanel>
 
-                <!-- Hàng 3: Trình soạn thảo văn bản thuần (hỗ trợ nội dung dài, nhiều dòng, Ctrl+Z, Ctrl+Y, Ctrl+A) -->
-                <TextBox x:Name="ContentEditorTextBox"
-                         Grid.Row="2"
-                         Text="{Binding EditingContent, UpdateSourceTrigger=PropertyChanged}"
-                         IsEnabled="{Binding IsEditorEnabled}"
-                         FontSize="{Binding EditorFontSize}"
-                         FontFamily="Segoe UI"
-                         AcceptsReturn="True"
-                         AcceptsTab="True"
-                         TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Disabled"
-                         UndoLimit="200"
-                         Padding="12,10"
-                         Background="{DynamicResource SurfaceBrush}"
-                         Foreground="{DynamicResource PrimaryTextBrush}"
-                         CaretBrush="{DynamicResource PrimaryTextBrush}"
-                         BorderBrush="{DynamicResource BorderSubtleBrush}"
-                         BorderThickness="1" />
+                <!-- Hàng 3: Khung Soạn thảo & Xem trước Markdown -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition>
+                            <ColumnDefinition.Style>
+                                <Style TargetType="ColumnDefinition">
+                                    <Setter Property="Width" Value="*" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowEditorPane}" Value="False">
+                                            <Setter Property="Width" Value="0" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ColumnDefinition.Style>
+                        </ColumnDefinition>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition>
+                            <ColumnDefinition.Style>
+                                <Style TargetType="ColumnDefinition">
+                                    <Setter Property="Width" Value="*" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowPreviewPane}" Value="False">
+                                            <Setter Property="Width" Value="0" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ColumnDefinition.Style>
+                        </ColumnDefinition>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Khung soạn thảo văn bản thuần -->
+                    <TextBox x:Name="ContentEditorTextBox"
+                             Grid.Column="0"
+                             Visibility="{Binding ShowEditorPane, Converter={StaticResource BoolToVis}}"
+                             Text="{Binding EditingContent, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding IsEditorEnabled}"
+                             FontSize="{Binding EditorFontSize}"
+                             FontFamily="Segoe UI"
+                             AcceptsReturn="True"
+                             AcceptsTab="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Disabled"
+                             UndoLimit="200"
+                             Padding="12,10"
+                             Background="{DynamicResource SurfaceBrush}"
+                             Foreground="{DynamicResource PrimaryTextBrush}"
+                             CaretBrush="{DynamicResource PrimaryTextBrush}"
+                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                             BorderThickness="1" />
+
+                    <!-- Khoảng cách khi chia đôi -->
+                    <Border Grid.Column="1"
+                            Width="10"
+                            Visibility="{Binding IsSplitMode, Converter={StaticResource BoolToVis}}" />
+
+                    <!-- Khung xem trước Markdown thuần WPF -->
+                    <Border Grid.Column="2"
+                            Visibility="{Binding ShowPreviewPane, Converter={StaticResource BoolToVis}}"
+                            Background="{DynamicResource SurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <FlowDocumentScrollViewer x:Name="MarkdownPreviewViewer"
+                                                  IsToolBarVisible="False"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  Background="Transparent"
+                                                  Foreground="{DynamicResource PrimaryTextBrush}"
+                                                  helpers:MarkdownBehavior.MarkdownText="{Binding EditingContent}"
+                                                  helpers:MarkdownBehavior.BaseFontSize="{Binding EditorFontSize}" />
+                    </Border>
+
+                    <!-- Thông báo khi chưa chọn prompt -->
+                    <TextBlock Grid.ColumnSpan="3"
+                               Text="Chọn một prompt bên trái hoặc bấm '+ Thêm mới' (Ctrl+N) để bắt đầu"
+                               IsHitTestVisible="False"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="14"
+                               Foreground="{DynamicResource SecondaryTextBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelectedPrompt}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </Grid>
         </Grid>
 
@@ -513,6 +645,27 @@
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource AccentBrush}" />
             </Grid>
+        </Border>
+        <Border x:Name="FileDropOverlay"
+                Grid.RowSpan="2"
+                Panel.ZIndex="10"
+                Visibility="Collapsed"
+                IsHitTestVisible="False"
+                Margin="12"
+                Padding="24"
+                CornerRadius="10"
+                BorderThickness="3"
+                BorderBrush="{DynamicResource AccentBrush}"
+                Background="{DynamicResource SurfaceBrush}"
+                Opacity="0.95">
+            <TextBlock Text="Thả file .txt / .md / .json để nhập prompt"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource PrimaryTextBrush}" />
         </Border>
     </Grid>
 </Window>

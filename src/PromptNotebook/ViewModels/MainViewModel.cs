@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using PromptNotebook.Helpers;
@@ -42,7 +43,9 @@ public sealed class MainViewModel : ObservableObject
 
     private bool _isDarkMode = true;
     private double _editorFontSize = 14.0;
+    private string _editorViewMode = "Split";
     private string _statusBarSummary = "Sẵn sàng";
+    private bool _isImportingTextFiles;
 
     public MainViewModel(
         DatabaseService dbService,
@@ -56,6 +59,9 @@ public sealed class MainViewModel : ObservableObject
 
         _isDarkMode = initialSettings.IsDarkMode;
         _editorFontSize = initialSettings.EditorFontSize;
+        _editorViewMode = initialSettings.EditorViewMode is ("Edit" or "Split" or "Preview")
+            ? initialSettings.EditorViewMode
+            : "Split";
 
         // Bộ hẹn giờ tự động lưu sau 700ms kể từ lần gõ phím cuối cùng
         _autoSaveTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -86,12 +92,27 @@ public sealed class MainViewModel : ObservableObject
         ToggleFavoriteCommand = new RelayCommand(ExecuteToggleFavorite);
         DuplicatePromptCommand = new RelayCommand(ExecuteDuplicatePrompt);
         DeleteOrRestorePromptCommand = new RelayCommand(ExecuteDeleteOrRestorePrompt);
-        PermanentDeleteCommand = new RelayCommand(ExecutePermanentDelete);
+        PermanentDeleteCommand = new RelayCommand(ExecutePermanentDelete, _ => IsTrashView);
         EmptyTrashCommand = new RelayCommand(ExecuteEmptyTrash, () => IsTrashView && Prompts.Count > 0);
         ToggleThemeCommand = new RelayCommand(() => IsDarkMode = !IsDarkMode);
         IncreaseFontSizeCommand = new RelayCommand(() => EditorFontSize = Math.Min(32.0, EditorFontSize + 1.0));
         DecreaseFontSizeCommand = new RelayCommand(() => EditorFontSize = Math.Max(10.0, EditorFontSize - 1.0));
+        SetViewModeCommand = new RelayCommand(param =>
+        {
+            if (param is string mode)
+                EditorViewMode = mode;
+        });
+        TogglePreviewCommand = new RelayCommand(() =>
+        {
+            EditorViewMode = EditorViewMode switch
+            {
+                "Edit" => "Split",
+                "Split" => "Preview",
+                _ => "Edit"
+            };
+        });
         ClearSelectionOrSearchCommand = new RelayCommand(ExecuteEscapeKey);
+        ClearSearchCommand = new RelayCommand(() => SearchKeyword = string.Empty, () => !string.IsNullOrEmpty(SearchKeyword));
         BackupNowCommand = new RelayCommand(ExecuteManualBackup);
     }
 
@@ -203,11 +224,14 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _searchKeyword, value))
             {
+                OnPropertyChanged(nameof(HasSearchKeyword));
                 _searchDebounceTimer.Stop();
                 _searchDebounceTimer.Start();
             }
         }
     }
+
+    public bool HasSearchKeyword => !string.IsNullOrEmpty(_searchKeyword);
 
     public string SelectedCategoryFilter
     {
@@ -233,6 +257,8 @@ public sealed class MainViewModel : ObservableObject
                     _isTrashView = false;
                     OnPropertyChanged(nameof(IsTrashView));
                     OnPropertyChanged(nameof(TrashToggleText));
+                    OnPropertyChanged(nameof(DeleteButtonText));
+                    OnPropertyChanged(nameof(IsEditorEnabled));
                 }
                 RefreshPromptList(keepSelection: true);
             }
@@ -294,11 +320,46 @@ public sealed class MainViewModel : ObservableObject
 
     public string FontSizeDisplay => $"{EditorFontSize:0}px";
 
+    public string EditorViewMode
+    {
+        get => _editorViewMode;
+        set
+        {
+            var normalized = value is ("Edit" or "Split" or "Preview") ? value : "Split";
+            if (SetProperty(ref _editorViewMode, normalized))
+            {
+                OnPropertyChanged(nameof(IsEditMode));
+                OnPropertyChanged(nameof(IsSplitMode));
+                OnPropertyChanged(nameof(IsPreviewMode));
+                OnPropertyChanged(nameof(ShowEditorPane));
+                OnPropertyChanged(nameof(ShowPreviewPane));
+            }
+        }
+    }
+
+    public bool IsEditMode => _editorViewMode == "Edit";
+    public bool IsSplitMode => _editorViewMode == "Split";
+    public bool IsPreviewMode => _editorViewMode == "Preview";
+    public bool ShowEditorPane => _editorViewMode is "Edit" or "Split";
+    public bool ShowPreviewPane => _editorViewMode is "Split" or "Preview";
+
     public string StatusBarSummary
     {
         get => _statusBarSummary;
         private set => SetProperty(ref _statusBarSummary, value);
     }
+
+    public bool IsImportingTextFiles
+    {
+        get => _isImportingTextFiles;
+        private set
+        {
+            if (SetProperty(ref _isImportingTextFiles, value))
+                OnPropertyChanged(nameof(CanImportTextFiles));
+        }
+    }
+
+    public bool CanImportTextFiles => !IsImportingTextFiles;
 
     public event EventHandler<bool>? ThemeChanged;
     public event EventHandler? FocusTitleRequested;
@@ -317,7 +378,10 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ToggleThemeCommand { get; }
     public RelayCommand IncreaseFontSizeCommand { get; }
     public RelayCommand DecreaseFontSizeCommand { get; }
+    public RelayCommand SetViewModeCommand { get; }
+    public RelayCommand TogglePreviewCommand { get; }
     public RelayCommand ClearSelectionOrSearchCommand { get; }
+    public RelayCommand ClearSearchCommand { get; }
     public RelayCommand BackupNowCommand { get; }
 
     // ==================== LOGIC NGHIỆP VỤ ====================
@@ -331,22 +395,31 @@ public sealed class MainViewModel : ObservableObject
     public void ReloadCategories()
     {
         var cats = _dbService.GetCategories();
-        EditableCategories = new ObservableCollection<string>(cats);
+        SyncCollection(_editableCategories, cats);
 
         var filterList = new List<string>(cats.Count + 1) { "Tất cả danh mục" };
         filterList.AddRange(cats);
 
         var currentFilter = _selectedCategoryFilter;
-        FilterCategories = new ObservableCollection<string>(filterList);
-        if (filterList.Contains(currentFilter))
-        {
-            _selectedCategoryFilter = currentFilter;
-        }
-        else
-        {
-            _selectedCategoryFilter = "Tất cả danh mục";
-        }
+        SyncCollection(_filterCategories, filterList);
+
+        _selectedCategoryFilter = filterList.Contains(currentFilter, StringComparer.OrdinalIgnoreCase)
+            ? filterList.First(c => string.Equals(c, currentFilter, StringComparison.OrdinalIgnoreCase))
+            : "Tất cả danh mục";
+
         OnPropertyChanged(nameof(SelectedCategoryFilter));
+    }
+
+    private static void SyncCollection(ObservableCollection<string> target, IReadOnlyList<string> source)
+    {
+        if (target.SequenceEqual(source, StringComparer.Ordinal))
+            return;
+
+        target.Clear();
+        foreach (var item in source)
+        {
+            target.Add(item);
+        }
     }
 
     public void RefreshPromptList(bool keepSelection = true, long? preferredPromptId = null)
@@ -405,6 +478,15 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    public void MovePrompt(PromptItem source, PromptItem target, bool insertAfter)
+    {
+        if (IsTrashView || IsImportingTextFiles || source.Id == target.Id) return;
+        FlushPendingSave();
+        _dbService.MovePrompt(source.Id, target.Id, insertAfter);
+        RefreshPromptList(keepSelection: true);
+        StatusBarSummary = "Đã lưu thứ tự prompt.";
+    }
+
     private void ScheduleAutoSave()
     {
         if (_selectedPrompt is null || _isTrashView)
@@ -441,7 +523,7 @@ public sealed class MainViewModel : ObservableObject
         _selectedPrompt.IsFavorite = _editingIsFavorite;
         _selectedPrompt.UpdatedAt = updatedAt;
 
-        if (!EditableCategories.Contains(categoryToSave))
+        if (!EditableCategories.Contains(categoryToSave, StringComparer.OrdinalIgnoreCase))
         {
             ReloadCategories();
         }
@@ -459,15 +541,33 @@ public sealed class MainViewModel : ObservableObject
             IsTrashView = false;
         }
 
+        if (IsPreviewMode)
+        {
+            EditorViewMode = "Split";
+        }
+
         var defaultCategory = (!string.IsNullOrWhiteSpace(SelectedCategoryFilter) &&
                                SelectedCategoryFilter != "Tất cả danh mục")
             ? SelectedCategoryFilter
             : "Chung";
 
-        var created = _dbService.CreatePrompt("Prompt mới", string.Empty, defaultCategory, isFavorite: false);
-        Prompts.Insert(0, created);
-        SelectedPrompt = created;
-        UpdateSummaryText();
+        var created = _dbService.CreatePrompt("Prompt mới", string.Empty, defaultCategory, isFavorite: _onlyFavoritesFilter);
+
+        if (!string.IsNullOrWhiteSpace(_searchKeyword))
+        {
+            _searchDebounceTimer.Stop();
+            _searchKeyword = string.Empty;
+            OnPropertyChanged(nameof(SearchKeyword));
+            OnPropertyChanged(nameof(HasSearchKeyword));
+            RefreshPromptList(keepSelection: false, preferredPromptId: created.Id);
+        }
+        else
+        {
+            Prompts.Insert(0, created);
+            SelectedPrompt = created;
+            UpdateSummaryText();
+        }
+
         FocusTitleRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -498,6 +598,34 @@ public sealed class MainViewModel : ObservableObject
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
+    }
+
+    public void RenamePrompt(PromptItem item, string newTitle, string newCategory)
+    {
+        FlushPendingSave();
+
+        var normalizedTitle = string.IsNullOrWhiteSpace(newTitle) ? "Prompt không tên" : newTitle.Trim();
+        var normalizedCategory = string.IsNullOrWhiteSpace(newCategory) ? "Chung" : newCategory.Trim();
+
+        item.Title = normalizedTitle;
+        item.Category = normalizedCategory;
+        item.UpdatedAt = _dbService.UpdateMetadataOnly(item.Id, normalizedTitle, normalizedCategory, item.IsFavorite);
+
+        if (ReferenceEquals(item, _selectedPrompt))
+        {
+            _suppressEditorTracking = true;
+            try
+            {
+                EditingTitle = normalizedTitle;
+                EditingCategory = normalizedCategory;
+            }
+            finally
+            {
+                _suppressEditorTracking = false;
+            }
+        }
+
+        ReloadCategories();
     }
 
     public void ExecuteToggleFavorite(object? parameter)
@@ -546,8 +674,8 @@ public sealed class MainViewModel : ObservableObject
             _dbService.RestoreFromTrash(target.Id);
             Prompts.Remove(target);
             SelectedPrompt = Prompts.FirstOrDefault();
+            ReloadCategories();
             StatusBarSummary = $"Đã khôi phục \"{target.Title}\".";
-            UpdateSummaryText();
             return;
         }
 
@@ -574,6 +702,7 @@ public sealed class MainViewModel : ObservableObject
             SelectedPrompt = null;
         }
 
+        ReloadCategories();
         UpdateSummaryText();
     }
 
@@ -592,9 +721,16 @@ public sealed class MainViewModel : ObservableObject
         if (confirm != MessageBoxResult.Yes)
             return;
 
+        if (ReferenceEquals(target, _selectedPrompt))
+        {
+            _autoSaveTimer.Stop();
+            _isDirty = false;
+        }
+
         _dbService.PermanentlyDelete(target.Id);
         Prompts.Remove(target);
         SelectedPrompt = Prompts.FirstOrDefault();
+        ReloadCategories();
         UpdateSummaryText();
     }
 
@@ -613,6 +749,7 @@ public sealed class MainViewModel : ObservableObject
             return;
 
         _dbService.EmptyTrash();
+        ReloadCategories();
         RefreshPromptList(keepSelection: false);
     }
 
@@ -630,8 +767,19 @@ public sealed class MainViewModel : ObservableObject
     public void ExecuteManualBackup()
     {
         FlushPendingSave();
-        var path = _dbService.PerformSafeBackup();
-        StatusBarSummary = $"Đã sao lưu cơ sở dữ liệu an toàn: {System.IO.Path.GetFileName(path)} (giữ tối đa 7 bản).";
+        try
+        {
+            var path = _dbService.PerformSafeBackup();
+            StatusBarSummary = $"Đã sao lưu cơ sở dữ liệu an toàn: {Path.GetFileName(path)} (giữ tối đa 7 bản).";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"Không thể sao lưu cơ sở dữ liệu:\n{ex.Message}",
+                "Prompt Notebook",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     public int ExportJson(string filePath)
@@ -642,23 +790,77 @@ public sealed class MainViewModel : ObservableObject
         return count;
     }
 
+    public async Task<TextFileImportResult> ImportTextFilesAsync(IEnumerable<string> filePaths)
+    {
+        if (IsImportingTextFiles)
+            throw new InvalidOperationException("Đang nhập file, vui lòng chờ hoàn tất.");
+
+        IsImportingTextFiles = true;
+        try
+        {
+            FlushPendingSave();
+            var category = SelectedCategoryFilter == "Tất cả danh mục" ? "Chung" : SelectedCategoryFilter;
+            StatusBarSummary = "Đang đọc file TXT/MD...";
+            var (prompts, errors) = await new TextFileImportService().ReadFilesAsync(filePaths, category);
+
+            // Người dùng có thể tiếp tục sửa prompt trong lúc đọc file.
+            FlushPendingSave();
+            var count = prompts.Count == 0 ? 0 : _dbService.BulkInsertPrompts(prompts);
+            if (count > 0)
+            {
+                SearchKeyword = string.Empty;
+                _searchDebounceTimer.Stop();
+                OnlyFavoritesFilter = false;
+                IsTrashView = false;
+                SelectedCategoryFilter = "Tất cả danh mục";
+                ReloadCategories();
+                RefreshPromptList(keepSelection: false);
+                SelectedPrompt = Prompts.MaxBy(p => p.Id);
+            }
+
+            StatusBarSummary = $"Đã nhập {count:N0} prompt từ file TXT/MD." +
+                               (errors.Count > 0 ? $" Bỏ qua {errors.Count:N0} file không đọc được." : string.Empty);
+            return new TextFileImportResult(count, errors);
+        }
+        catch
+        {
+            StatusBarSummary = "Không thể hoàn tất nhập file TXT/MD.";
+            throw;
+        }
+        finally
+        {
+            IsImportingTextFiles = false;
+        }
+    }
+
     public int ImportJson(string filePath)
     {
         FlushPendingSave();
         var count = _jsonService.ImportFromJsonFile(_dbService, filePath);
+        if (count > 0)
+        {
+            SearchKeyword = string.Empty;
+            _searchDebounceTimer.Stop();
+            OnlyFavoritesFilter = false;
+            IsTrashView = false;
+            SelectedCategoryFilter = "Tất cả danh mục";
+        }
         ReloadCategories();
-        RefreshPromptList(keepSelection: true);
+        RefreshPromptList(keepSelection: count == 0);
         StatusBarSummary = $"Đã nhập thành công {count:N0} prompt từ file JSON UTF-8.";
         return count;
     }
 
     public void OnApplicationClosing(AppSettings settings)
     {
+        _searchDebounceTimer.Stop();
+
         // Đảm bảo lưu toàn bộ thay đổi ngay lập tức trước khi thoát
         FlushPendingSave();
 
         settings.IsDarkMode = IsDarkMode;
         settings.EditorFontSize = EditorFontSize;
+        settings.EditorViewMode = EditorViewMode;
         settings.LastSelectedPromptId = SelectedPrompt?.Id;
         _settingsService.Save(settings);
 

@@ -43,19 +43,20 @@ public sealed class DatabaseService
         var conn = new SqliteConnection(_connectionString);
         conn.Open();
 
-        // Đăng ký hàmเปรียบเทียบ chuỗi Unicode (CurrentCultureIgnoreCase / OrdinalIgnoreCase)
-        // Giúp SQLite hỗ trợ tìm kiếm không phân biệt hoa thường cho cả tiếng Việt có dấu, tiếng Anh và tiếng Trung.
+        // Đăng ký hàm so sánh chuỗi Unicode không phân biệt hoa thường (tiếng Việt, Anh, Trung).
         conn.CreateFunction(
             "UNICODE_CONTAINS",
             (string? source, string? keyword) =>
             {
                 if (string.IsNullOrEmpty(keyword)) return 1;
                 if (string.IsNullOrEmpty(source)) return 0;
+                if (source.Contains(keyword, StringComparison.OrdinalIgnoreCase)) return 1;
                 return CultureInfo.InvariantCulture.CompareInfo.IndexOf(
                     source,
                     keyword,
                     CompareOptions.IgnoreCase) >= 0 ? 1 : 0;
-            });
+            },
+            isDeterministic: true);
 
         return conn;
     }
@@ -94,6 +95,27 @@ public sealed class DatabaseService
         cmd.ExecuteNonQuery();
 
         SeedInitialPromptsIfEmpty(conn);
+
+        // Nâng cấp dữ liệu cũ một lần, giữ nguyên thứ tự đang hiển thị.
+        using var columns = conn.CreateCommand();
+        columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Prompts') WHERE name = 'SortOrder';";
+        if (Convert.ToInt64(columns.ExecuteScalar()) == 0)
+        {
+            using var migration = conn.CreateCommand();
+            migration.CommandText = @"
+                ALTER TABLE Prompts ADD COLUMN SortOrder INTEGER NOT NULL DEFAULT 0;
+                WITH ranked AS (
+                    SELECT Id, ROW_NUMBER() OVER (ORDER BY IsFavorite DESC, UpdatedAt DESC, Id DESC) AS Position
+                    FROM Prompts
+                )
+                UPDATE Prompts SET SortOrder = (SELECT Position FROM ranked WHERE ranked.Id = Prompts.Id);
+            ";
+            migration.ExecuteNonQuery();
+        }
+
+        using var index = conn.CreateCommand();
+        index.CommandText = "CREATE INDEX IF NOT EXISTS IX_Prompts_SortOrder ON Prompts (IsDeleted, SortOrder, Id);";
+        index.ExecuteNonQuery();
     }
 
     private static void SeedInitialPromptsIfEmpty(SqliteConnection conn)
@@ -107,10 +129,10 @@ public sealed class DatabaseService
         var samples = new (string Title, string Category, bool IsFav, string Content)[]
         {
             (
-                "Chuyên gia tối ưu mã nguồn C# .NET 10 và WPF hiệu năng cao (Kiểm tra hiển thị tiêu đề dài tự động xuống dòng trong danh sách cột bên trái mà không bị cắt chữ)",
+                "Chuyên gia tối ưu mã nguồn C# .NET 8 và WPF hiệu năng cao (Kiểm tra hiển thị tiêu đề dài tự động xuống dòng trong danh sách cột bên trái mà không bị cắt chữ)",
                 "Lập trình",
                 true,
-                "Bạn là kỹ sư phần mềm hệ thống chuyên sâu về C#, .NET 10 và WPF.\nHãy phân tích đoạn mã dưới đây theo các tiêu chí:\n1. Tối ưu cấp phát bộ nhớ (RAM) và tránh rò rỉ sự kiện.\n2. Đảm bảo VirtualizingStackPanel hoạt động mượt mà với hơn 5.000 mục.\n3. Sử dụng Microsoft.Data.Sqlite thuần với WAL mode.\n\n[Dán mã nguồn tại đây]"
+                "Bạn là kỹ sư phần mềm hệ thống chuyên sâu về C#, .NET 8 và WPF.\nHãy phân tích đoạn mã dưới đây theo các tiêu chí:\n1. Tối ưu cấp phát bộ nhớ (RAM) và tránh rò rỉ sự kiện.\n2. Đảm bảo VirtualizingStackPanel hoạt động mượt mà với hơn 5.000 mục.\n3. Sử dụng Microsoft.Data.Sqlite thuần với WAL mode.\n\n[Dán mã nguồn tại đây]"
             ),
             (
                 "Bản dịch thuật đa ngôn ngữ Việt - Anh - Trung (中越英多语言专业翻译提示词 - 保持术语一致性与自然语感)",
@@ -192,13 +214,11 @@ public sealed class DatabaseService
         if (hasKeyword)
         {
             var kw = searchKeyword!.Trim();
-            // Kiểm tra nhanh bằng INSTR cho chữ hoa/thường chính xác (cực nhanh cho tiếng Trung/ASCII)
-            // kết hợp UNICODE_CONTAINS cho tìm kiếm không phân biệt hoa thường tiếng Việt/Anh/Trung
-            sql += " AND (INSTR(Title, $kw) > 0 OR INSTR(Content, $kw) > 0 OR UNICODE_CONTAINS(Title, $kw) = 1 OR UNICODE_CONTAINS(Content, $kw) = 1)";
+            sql += " AND (UNICODE_CONTAINS(Title, $kw) = 1 OR UNICODE_CONTAINS(Content, $kw) = 1)";
             cmd.Parameters.AddWithValue("$kw", kw);
         }
 
-        sql += " ORDER BY IsFavorite DESC, UpdatedAt DESC, Id DESC;";
+        sql += " ORDER BY SortOrder ASC, Id DESC;";
         cmd.CommandText = sql;
 
         var results = new List<PromptItem>(256);
@@ -274,8 +294,9 @@ public sealed class DatabaseService
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Prompts (Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt)
-            VALUES ($title, $content, $category, $isFav, 0, $now, $now, NULL);
+            INSERT INTO Prompts (Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt, SortOrder)
+            VALUES ($title, $content, $category, $isFav, 0, $now, $now, NULL,
+                    (SELECT COALESCE(MIN(SortOrder), 0) - 1 FROM Prompts));
             SELECT last_insert_rowid();
         ";
         cmd.Parameters.AddWithValue("$title", normalizedTitle);
@@ -450,6 +471,40 @@ public sealed class DatabaseService
         return cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Di chuyển tương đối trong toàn bộ danh sách để vẫn dùng được khi đang lọc.</summary>
+    public void MovePrompt(long sourceId, long targetId, bool insertAfter)
+    {
+        if (sourceId == targetId) return;
+
+        using var conn = CreateConnection();
+        using var tx = conn.BeginTransaction();
+        var ids = new List<long>();
+        using (var query = conn.CreateCommand())
+        {
+            query.Transaction = tx;
+            query.CommandText = "SELECT Id FROM Prompts WHERE IsDeleted = 0 ORDER BY SortOrder ASC, Id DESC;";
+            using var reader = query.ExecuteReader();
+            while (reader.Read()) ids.Add(reader.GetInt64(0));
+        }
+
+        if (!ids.Contains(sourceId) || !ids.Contains(targetId)) return;
+        ids.Remove(sourceId);
+        ids.Insert(ids.IndexOf(targetId) + (insertAfter ? 1 : 0), sourceId);
+
+        using var update = conn.CreateCommand();
+        update.Transaction = tx;
+        update.CommandText = "UPDATE Prompts SET SortOrder = $order WHERE Id = $id;";
+        var order = update.Parameters.Add("$order", SqliteType.Integer);
+        var id = update.Parameters.Add("$id", SqliteType.Integer);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            order.Value = i;
+            id.Value = ids[i];
+            update.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
     /// <summary>
     /// Lấy toàn bộ dữ liệu (bao gồm cả Content) để xuất ra file JSON UTF-8.
     /// </summary>
@@ -458,8 +513,8 @@ public sealed class DatabaseService
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = includeDeleted
-            ? "SELECT Id, Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt FROM Prompts ORDER BY Id ASC;"
-            : "SELECT Id, Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt FROM Prompts WHERE IsDeleted = 0 ORDER BY Id ASC;";
+            ? "SELECT Id, Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt FROM Prompts ORDER BY SortOrder ASC, Id DESC;"
+            : "SELECT Id, Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt FROM Prompts WHERE IsDeleted = 0 ORDER BY SortOrder ASC, Id DESC;";
 
         var list = new List<PromptItem>();
         using var reader = cmd.ExecuteReader();
@@ -486,13 +541,18 @@ public sealed class DatabaseService
     /// </summary>
     public int BulkInsertPrompts(IEnumerable<PromptItem> items)
     {
+        var batch = items.ToList();
         using var conn = CreateConnection();
         using var tx = conn.BeginTransaction();
+        using var firstOrder = conn.CreateCommand();
+        firstOrder.Transaction = tx;
+        firstOrder.CommandText = "SELECT COALESCE(MIN(SortOrder), 0) FROM Prompts;";
+        var nextOrder = Convert.ToInt64(firstOrder.ExecuteScalar()) - batch.Count;
         using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = @"
-            INSERT INTO Prompts (Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt)
-            VALUES ($title, $content, $category, $isFav, $isDel, $createdAt, $updatedAt, $deletedAt);
+            INSERT INTO Prompts (Title, Content, Category, IsFavorite, IsDeleted, CreatedAt, UpdatedAt, DeletedAt, SortOrder)
+            VALUES ($title, $content, $category, $isFav, $isDel, $createdAt, $updatedAt, $deletedAt, $sortOrder);
         ";
 
         var pTitle = cmd.Parameters.Add("$title", SqliteType.Text);
@@ -503,11 +563,12 @@ public sealed class DatabaseService
         var pCreated = cmd.Parameters.Add("$createdAt", SqliteType.Text);
         var pUpdated = cmd.Parameters.Add("$updatedAt", SqliteType.Text);
         var pDeleted = cmd.Parameters.Add("$deletedAt", SqliteType.Text);
+        var pOrder = cmd.Parameters.Add("$sortOrder", SqliteType.Integer);
 
         var count = 0;
         var now = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 
-        foreach (var item in items)
+        foreach (var item in batch)
         {
             pTitle.Value = string.IsNullOrWhiteSpace(item.Title) ? "Prompt không tên" : item.Title.Trim();
             pContent.Value = item.Content ?? string.Empty;
@@ -517,6 +578,7 @@ public sealed class DatabaseService
             pCreated.Value = string.IsNullOrWhiteSpace(item.CreatedAt) ? now : item.CreatedAt;
             pUpdated.Value = string.IsNullOrWhiteSpace(item.UpdatedAt) ? now : item.UpdatedAt;
             pDeleted.Value = item.DeletedAt is null ? DBNull.Value : item.DeletedAt;
+            pOrder.Value = nextOrder++;
 
             cmd.ExecuteNonQuery();
             count++;

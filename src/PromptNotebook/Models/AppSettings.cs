@@ -20,6 +20,9 @@ public sealed class AppSettings
     [JsonPropertyName("editorFontSize")]
     public double EditorFontSize { get; set; } = 14.0;
 
+    [JsonPropertyName("editorViewMode")]
+    public string EditorViewMode { get; set; } = "Split"; // Edit | Split | Preview
+
     [JsonPropertyName("windowWidth")]
     public double WindowWidth { get; set; } = 1180.0;
 

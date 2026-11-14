@@ -18,6 +18,7 @@ namespace PromptNotebook.Tests;
 /// </summary>
 public static class Program
 {
+    [STAThread]
     public static int Main()
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -36,6 +37,8 @@ public static class Program
         {
             var db = new DatabaseService(dbPath);
             db.InitializeDatabase();
+            TextFileImportTests.Run(testRoot);
+            PersonalFeaturesTests.Run(testRoot);
 
             // 1. Kiểm thử CRUD + Tên dài 150-300 ký tự + Tiếng Việt / Anh / Trung
             var longTitle = "Prompt kiểm thử tiêu đề siêu dài từ 150 đến 300 ký tự để xác nhận khả năng lưu trữ và hiển thị tự động xuống dòng đầy đủ trên danh sách cột trái của ứng dụng Windows WPF mà không bị cắt bớt hay ẩn nội dung quan trọng - 人工智能提示词管理系统长标题测试验证";

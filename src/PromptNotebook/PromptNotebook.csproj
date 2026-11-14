@@ -23,4 +23,9 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.2" />
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('..\..\.env')">
+    <Content Include="..\..\.env" Link=".env" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
 </Project>
