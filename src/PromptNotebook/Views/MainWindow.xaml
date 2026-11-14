@@ -1,0 +1,518 @@
+<Window x:Class="PromptNotebook.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Prompt Notebook"
+        Width="1180"
+        Height="740"
+        MinWidth="760"
+        MinHeight="500"
+        FontFamily="Segoe UI"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource PrimaryTextBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        PreviewKeyDown="MainWindow_PreviewKeyDown"
+        Closing="MainWindow_Closing">
+
+    <!-- Phím tắt toàn cửa sổ theo đúng đặc tả -->
+    <Window.InputBindings>
+        <KeyBinding Modifiers="Ctrl" Key="N" Command="{Binding NewPromptCommand}" />
+        <KeyBinding Modifiers="Ctrl" Key="S" Command="{Binding SaveNowCommand}" />
+        <KeyBinding Modifiers="Ctrl+Shift" Key="C" Command="{Binding CopyContentCommand}" />
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="30" />
+        </Grid.RowDefinitions>
+
+        <!-- Bố cục chính 2 cột: Cột trái (mặc định 40%) - GridSplitter - Cột phải (mặc định 60%) -->
+        <Grid Grid.Row="0" x:Name="MainSplitGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="LeftColumn" Width="4*" MinWidth="260" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition x:Name="RightColumn" Width="6*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ==================== CỘT TRÁI: DANH SÁCH PROMPT (40%) ==================== -->
+            <Border Grid.Column="0"
+                    Background="{DynamicResource SidebarBackgroundBrush}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="0,0,1,0">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Hàng 1: Thanh tìm kiếm + Nút thêm prompt mới -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Grid Grid.Column="0">
+                            <TextBox x:Name="SearchTextBox"
+                                     Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                                     FontSize="13.5"
+                                     Padding="10,7,28,7"
+                                     VerticalContentAlignment="Center"
+                                     Background="{DynamicResource SurfaceBrush}"
+                                     Foreground="{DynamicResource PrimaryTextBrush}"
+                                     CaretBrush="{DynamicResource PrimaryTextBrush}"
+                                     BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                     BorderThickness="1"
+                                     ToolTip="Tìm kiếm tức thì theo tên và nội dung (Ctrl+F). Hỗ trợ tiếng Việt, Anh, Trung." />
+                            <TextBlock Text="Tìm kiếm tên hoặc nội dung (Ctrl+F)..."
+                                       IsHitTestVisible="False"
+                                       VerticalAlignment="Center"
+                                       Margin="12,0,30,0"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource SecondaryTextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchTextBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <Button Grid.Column="1"
+                                Content="+ Thêm mới"
+                                Command="{Binding NewPromptCommand}"
+                                Margin="8,0,0,0"
+                                Padding="12,7"
+                                FontSize="13"
+                                FontWeight="SemiBold"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="White"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                ToolTip="Tạo prompt mới (Ctrl+N)" />
+                    </Grid>
+
+                    <!-- Hàng 2: Bộ lọc Danh mục + Yêu thích + Thùng rác -->
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding FilterCategories}"
+                                  SelectedItem="{Binding SelectedCategoryFilter}"
+                                  FontSize="12.5"
+                                  Padding="8,4"
+                                  VerticalContentAlignment="Center"
+                                  ToolTip="Lọc theo danh mục" />
+
+                        <ToggleButton Grid.Column="1"
+                                      Content="★ Yêu thích"
+                                      IsChecked="{Binding OnlyFavoritesFilter}"
+                                      Margin="6,0,0,0"
+                                      Padding="9,4"
+                                      FontSize="12.5"
+                                      Background="{DynamicResource SurfaceBrush}"
+                                      Foreground="{DynamicResource PrimaryTextBrush}"
+                                      BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                      Cursor="Hand"
+                                      ToolTip="Chỉ hiển thị prompt yêu thích" />
+
+                        <ToggleButton Grid.Column="2"
+                                      Content="{Binding TrashToggleText}"
+                                      IsChecked="{Binding IsTrashView}"
+                                      Margin="6,0,0,0"
+                                      Padding="9,4"
+                                      FontSize="12.5"
+                                      Background="{DynamicResource SurfaceBrush}"
+                                      Foreground="{DynamicResource PrimaryTextBrush}"
+                                      BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                      Cursor="Hand"
+                                      ToolTip="Xem và khôi phục các prompt đã xóa" />
+                    </Grid>
+
+                    <!-- Hàng 3: Danh sách Prompt ảo hóa UI (VirtualizingStackPanel) + Tự xuống dòng tên dài 150-300+ ký tự -->
+                    <ListBox x:Name="PromptListBox"
+                             Grid.Row="2"
+                             ItemsSource="{Binding Prompts}"
+                             SelectedItem="{Binding SelectedPrompt, Mode=TwoWay}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="True"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Pixel">
+
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0,0,0,6" />
+                                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+                                <Setter Property="BorderThickness" Value="1" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="ItemBorder"
+                                                    Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="6"
+                                                    Padding="10,8">
+                                                <ContentPresenter HorizontalAlignment="Stretch" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SurfaceSelectedBrush}" />
+                                                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Background="Transparent" Tag="{Binding}">
+                                    <!-- Menu chuột phải: Đổi tên, Nhân bản, Xóa / Khôi phục, Yêu thích -->
+                                    <Grid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Đổi tên..." Click="ContextMenu_Rename_Click" />
+                                            <MenuItem Header="Nhân bản" Click="ContextMenu_Duplicate_Click" />
+                                            <MenuItem Header="Yêu thích / Bỏ yêu thích" Click="ContextMenu_Favorite_Click" />
+                                            <Separator />
+                                            <MenuItem Header="Xóa / Khôi phục" Click="ContextMenu_DeleteOrRestore_Click" />
+                                        </ContextMenu>
+                                    </Grid.ContextMenu>
+
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Tên prompt: Bắt buộc tự động xuống dòng (TextWrapping="Wrap"), không giới hạn 1 dòng -->
+                                    <TextBlock Grid.Row="0"
+                                               Text="{Binding Title}"
+                                               TextWrapping="Wrap"
+                                               FontSize="13.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               LineHeight="19"
+                                               Margin="0,0,0,6" />
+
+                                    <!-- Hàng thông tin phụ: Danh mục + Yêu thích -->
+                                    <Grid Grid.Row="1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0"
+                                                Background="{DynamicResource BadgeBackgroundBrush}"
+                                                CornerRadius="4"
+                                                Padding="7,2">
+                                            <TextBlock Text="{Binding Category}"
+                                                       FontSize="11.5"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                        </Border>
+
+                                        <Button Grid.Column="2"
+                                                Content="{Binding FavoriteIcon}"
+                                                FontSize="15"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Foreground="{DynamicResource FavoriteStarBrush}"
+                                                Cursor="Hand"
+                                                Padding="4,0"
+                                                ToolTip="Đánh dấu / Bỏ đánh dấu yêu thích"
+                                                Click="ItemFavoriteButton_Click" />
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- Hàng 4: Thanh công cụ dữ liệu (Nhập / Xuất JSON UTF-8, Sao lưu, Dọn thùng rác, Sáng/Tối) -->
+                    <WrapPanel Grid.Row="3" Margin="0,8,0,0" Orientation="Horizontal">
+                        <Button Content="Nhập JSON"
+                                Padding="9,5"
+                                Margin="0,0,6,4"
+                                FontSize="12"
+                                Background="{DynamicResource SurfaceBrush}"
+                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                Cursor="Hand"
+                                Click="ImportJsonButton_Click"
+                                ToolTip="Nhập danh sách prompt từ file JSON UTF-8" />
+
+                        <Button Content="Xuất JSON"
+                                Padding="9,5"
+                                Margin="0,0,6,4"
+                                FontSize="12"
+                                Background="{DynamicResource SurfaceBrush}"
+                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                Cursor="Hand"
+                                Click="ExportJsonButton_Click"
+                                ToolTip="Xuất toàn bộ prompt ra file JSON UTF-8" />
+
+                        <Button Content="Sao lưu DB"
+                                Command="{Binding BackupNowCommand}"
+                                Padding="9,5"
+                                Margin="0,0,6,4"
+                                FontSize="12"
+                                Background="{DynamicResource SurfaceBrush}"
+                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                Cursor="Hand"
+                                ToolTip="Sao lưu an toàn SQLite ngay lập tức (giữ 7 bản gần nhất)" />
+
+                        <Button Content="Dọn thùng rác"
+                                Command="{Binding EmptyTrashCommand}"
+                                Visibility="{Binding IsTrashView, Converter={StaticResource BoolToVis}}"
+                                Padding="9,5"
+                                Margin="0,0,6,4"
+                                FontSize="12"
+                                Background="{DynamicResource DangerBrush}"
+                                Foreground="White"
+                                BorderThickness="0"
+                                Cursor="Hand" />
+
+                        <Button Content="{Binding ThemeButtonText}"
+                                Command="{Binding ToggleThemeCommand}"
+                                Padding="9,5"
+                                Margin="0,0,0,4"
+                                FontSize="12"
+                                Background="{DynamicResource SurfaceBrush}"
+                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                Cursor="Hand"
+                                ToolTip="Chuyển đổi giao diện Sáng / Tối (Dark / Light Mode)" />
+                    </WrapPanel>
+                </Grid>
+            </Border>
+
+            <!-- Thanh kéo thay đổi độ rộng 2 cột (lưu lại độ rộng cột khi đóng ứng dụng) -->
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Background="{DynamicResource SplitterBrush}"
+                          ShowsPreview="False"
+                          Cursor="SizeWE" />
+
+            <!-- ==================== CỘT PHẢI: TRÌNH CHỈNH SỬA (60%) ==================== -->
+            <Grid Grid.Column="2"
+                  Background="{DynamicResource EditorBackgroundBrush}"
+                  Margin="16,12,16,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Hàng 1: Hiển thị & chỉnh sửa tên đầy đủ của prompt (hỗ trợ nhiều dòng tự xuống dòng) -->
+                <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <TextBox x:Name="TitleEditorTextBox"
+                             Text="{Binding EditingTitle, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding IsEditorEnabled}"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="False"
+                             FontSize="17"
+                             FontWeight="SemiBold"
+                             Padding="10,8"
+                             Background="{DynamicResource SurfaceBrush}"
+                             Foreground="{DynamicResource PrimaryTextBrush}"
+                             CaretBrush="{DynamicResource PrimaryTextBrush}"
+                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                             BorderThickness="1"
+                             ToolTip="Tên đầy đủ của prompt đang chọn (tự động xuống dòng khi tên dài)" />
+                </Grid>
+
+                <!-- Hàng 2: Thanh điều khiển trình chỉnh sửa (Danh mục, Yêu thích, Cỡ chữ, Trạng thái lưu, Nút Sao chép) -->
+                <Grid Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Danh mục:"
+                               VerticalAlignment="Center"
+                               FontSize="12.5"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Margin="0,0,6,0" />
+
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding EditableCategories}"
+                              Text="{Binding EditingCategory, UpdateSourceTrigger=PropertyChanged}"
+                              IsEditable="True"
+                              IsEnabled="{Binding IsEditorEnabled}"
+                              FontSize="12.5"
+                              Padding="6,4"
+                              VerticalContentAlignment="Center"
+                              ToolTip="Chọn hoặc nhập tên danh mục mới" />
+
+                    <Button Grid.Column="2"
+                            Content="{Binding EditingFavoriteText}"
+                            Command="{Binding ToggleFavoriteCommand}"
+                            IsEnabled="{Binding HasSelectedPrompt}"
+                            Margin="8,0,0,0"
+                            Padding="10,5"
+                            FontSize="12.5"
+                            Background="{DynamicResource SurfaceBrush}"
+                            Foreground="{DynamicResource FavoriteStarBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            Cursor="Hand" />
+
+                    <Button Grid.Column="3"
+                            Content="{Binding DeleteButtonText}"
+                            Command="{Binding DeleteOrRestorePromptCommand}"
+                            IsEnabled="{Binding HasSelectedPrompt}"
+                            Margin="8,0,0,0"
+                            Padding="10,5"
+                            FontSize="12.5"
+                            Background="{DynamicResource SurfaceBrush}"
+                            Foreground="{DynamicResource PrimaryTextBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            Cursor="Hand"
+                            ToolTip="Xóa vào thùng rác (Delete) hoặc khôi phục" />
+
+                    <!-- Thay đổi cỡ chữ của trình chỉnh sửa -->
+                    <StackPanel Grid.Column="5"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="0,0,12,0">
+                        <TextBlock Text="Cỡ chữ:"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   Margin="0,0,6,0" />
+                        <Button Content="A-"
+                                Command="{Binding DecreaseFontSizeCommand}"
+                                Width="28"
+                                Height="26"
+                                FontSize="11.5"
+                                Background="{DynamicResource SurfaceBrush}"
+                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                Cursor="Hand"
+                                ToolTip="Giảm cỡ chữ trình soạn thảo" />
+                        <TextBlock Text="{Binding FontSizeDisplay}"
+                                   Width="38"
+                                   TextAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}" />
+                        <Button Content="A+"
+                                Command="{Binding IncreaseFontSizeCommand}"
+                                Width="28"
+                                Height="26"
+                                FontSize="11.5"
+                                Background="{DynamicResource SurfaceBrush}"
+                                Foreground="{DynamicResource PrimaryTextBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                Cursor="Hand"
+                                ToolTip="Tăng cỡ chữ trình soạn thảo" />
+                    </StackPanel>
+
+                    <!-- Nút Sao chép 1 click -->
+                    <Button Grid.Column="6"
+                            Content="📋 Sao chép nội dung"
+                            Command="{Binding CopyContentCommand}"
+                            IsEnabled="{Binding HasSelectedPrompt}"
+                            Padding="14,6"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Background="{DynamicResource AccentBrush}"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            ToolTip="Sao chép chính xác 100% nội dung vào Clipboard (Ctrl+Shift+C)" />
+                </Grid>
+
+                <!-- Hàng 3: Trình soạn thảo văn bản thuần (hỗ trợ nội dung dài, nhiều dòng, Ctrl+Z, Ctrl+Y, Ctrl+A) -->
+                <TextBox x:Name="ContentEditorTextBox"
+                         Grid.Row="2"
+                         Text="{Binding EditingContent, UpdateSourceTrigger=PropertyChanged}"
+                         IsEnabled="{Binding IsEditorEnabled}"
+                         FontSize="{Binding EditorFontSize}"
+                         FontFamily="Segoe UI"
+                         AcceptsReturn="True"
+                         AcceptsTab="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Disabled"
+                         UndoLimit="200"
+                         Padding="12,10"
+                         Background="{DynamicResource SurfaceBrush}"
+                         Foreground="{DynamicResource PrimaryTextBrush}"
+                         CaretBrush="{DynamicResource PrimaryTextBrush}"
+                         BorderBrush="{DynamicResource BorderSubtleBrush}"
+                         BorderThickness="1" />
+            </Grid>
+        </Grid>
+
+        <!-- Thanh trạng thái phía dưới: Hiển thị số lượng prompt, độ dài ký tự và trạng thái Đang lưu / Đã lưu -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource SidebarBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusBarSummary}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{DynamicResource SecondaryTextBrush}" />
+
+                <TextBlock Grid.Column="1"
+                           Text="{Binding ContentLengthInfo}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Margin="0,0,18,0" />
+
+                <TextBlock Grid.Column="2"
+                           Text="{Binding SaveStatusText}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource AccentBrush}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
