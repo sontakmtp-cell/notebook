@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Rendering;
 using PromptNotebook;
@@ -59,6 +60,11 @@ internal static class EditorWindowTests
 
     private static async Task RunOnDispatcherAsync(MainWindow window, string folder, bool checkClipboard)
     {
+        Assert(window.Icon is BitmapFrame { Decoder: IconBitmapDecoder decoder } &&
+            decoder.Frames.Any(frame => frame.PixelWidth == 16 && frame.PixelHeight == 16) &&
+            decoder.Frames.Any(frame => frame.PixelWidth == 256 && frame.PixelHeight == 256),
+            "The main window loads the multi-resolution Notebook icon");
+
         var markdown = Path.Combine(folder, "mẫu.md");
         var json = Path.Combine(folder, "mẫu.json");
         var image = Path.Combine(folder, "image.png");
