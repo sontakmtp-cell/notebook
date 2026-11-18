@@ -1,5 +1,6 @@
 using ICSharpCode.AvalonEdit.Document;
 using PromptNotebook.Helpers;
+using PromptNotebook.Services;
 using System.IO;
 
 namespace PromptNotebook.Models;
@@ -27,6 +28,10 @@ public sealed class EditorTab : ObservableObject
     public string Name => _path is null ? _untitledName + Format.Extension() : Path.GetFileName(_path);
     public string ToolTip => _path ?? Name;
     public string? FilePath => _path;
+    internal Guid RecoveryId { get; init; } = Guid.NewGuid();
+    internal string? RecoveredFrom { get; init; }
+    internal string? RecoveryName { get; init; }
+    internal FileStamp? SavedStamp { get; set; }
     public FileFormat Format => _format;
     public TextEncoding Encoding { get; }
 

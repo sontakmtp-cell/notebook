@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Indentation;
@@ -15,6 +16,23 @@ public partial class MainWindow
     private readonly DefaultIndentationStrategy _defaultIndentation = new();
     private static readonly FontFamily MarkdownFont = new("Segoe UI");
     private static readonly FontFamily PlainFont = new("Cascadia Mono, Consolas");
+
+    private void AlignJsonClosingBracket(object? sender, TextCompositionEventArgs e)
+    {
+        if (Editor.IsReadOnly || _active?.Format != FileFormat.Json ||
+            e.Text is not ("}" or "]") || Editor.SelectionLength != 0)
+            return;
+
+        var offset = Editor.CaretOffset;
+        var dedent = JsonIndentation.ClosingBracketDedent(Editor.Document, offset);
+        if (dedent == 0)
+            return;
+
+        Editor.Document.Replace(offset - dedent, dedent, e.Text);
+        Editor.CaretOffset = offset - dedent + 1;
+        Editor.TextArea.Caret.BringCaretToView();
+        e.Handled = true;
+    }
 
     private void ApplyFormat()
     {

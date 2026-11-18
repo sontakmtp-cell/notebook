@@ -19,8 +19,7 @@ public partial class App : Application
         ApplyTheme(settings.IsDarkMode);
         MainWindow = new MainWindow(_store, settings);
         MainWindow.Show();
-        if (e.Args.Length > 0)
-            _ = ((MainWindow)MainWindow).OpenFromStartupAsync(e.Args);
+        _ = ((MainWindow)MainWindow).StartAsync(e.Args);
     }
 
     public static void ApplyTheme(bool dark)

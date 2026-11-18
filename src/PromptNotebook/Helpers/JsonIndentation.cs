@@ -33,7 +33,7 @@ public sealed class JsonIndentation : IIndentationStrategy
         }
     }
 
-    public static void AlignClosingBracket(TextDocument document, int offset)
+    public static int ClosingBracketDedent(TextDocument document, int offset)
     {
         var line = document.GetLineByOffset(offset);
         var whitespace = TextUtilities.GetWhitespaceAfter(document, line.Offset);
@@ -45,8 +45,8 @@ public sealed class JsonIndentation : IIndentationStrategy
             // the newly typed closing bracket moves out one indentation level.
             var indent = previousText.EndsWith('{') || previousText.EndsWith('[')
                 ? previousIndent : Math.Max(0, whitespace.Length - 2);
-            if (indent != whitespace.Length)
-                document.Replace(whitespace.Offset, whitespace.Length, new string(' ', indent));
+            return Math.Max(0, whitespace.Length - indent);
         }
+        return 0;
     }
 }

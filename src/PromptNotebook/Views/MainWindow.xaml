@@ -84,6 +84,10 @@
                             <TextBlock Text="Mở" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button Padding="4,5" ToolTip="Tệp gần đây" AutomationProperties.Name="Tệp gần đây" Click="RecentClick">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="9" Text="&#xE70D;" />
+                        <Button.ContextMenu><ContextMenu Placement="Bottom" /></Button.ContextMenu>
+                    </Button>
                     <Button Style="{StaticResource ToolButton}" ToolTip="Lưu tệp (Ctrl+S)" Click="SaveClick">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE74E;" Style="{StaticResource Icon}" Margin="0,0,7,0" />
@@ -94,6 +98,15 @@
                             AutomationProperties.Name="Lưu thành" Click="SaveAsClick">
                         <TextBlock Text="&#xE792;" Style="{StaticResource Icon}" />
                     </Button>
+                    <Button Padding="4,5" ToolTip="Tùy chọn lưu" AutomationProperties.Name="Tùy chọn lưu"
+                            Click="SettingsClick">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="9" Text="&#xE70D;" />
+                        <Button.ContextMenu>
+                            <ContextMenu Placement="Bottom">
+                                <MenuItem Header="Lưu tất cả" InputGestureText="Ctrl+Alt+S" Click="SaveAllClick" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                     <Border Margin="4,6" Width="1" Background="{DynamicResource BorderSubtleBrush}" />
                     <Button x:Name="UndoButton" Style="{StaticResource IconButton}" ToolTip="Hoàn tác (Ctrl+Z)"
                             AutomationProperties.Name="Hoàn tác" Click="UndoClick">
@@ -102,6 +115,10 @@
                     <Button x:Name="RedoButton" Style="{StaticResource IconButton}" ToolTip="Làm lại (Ctrl+Y)"
                             AutomationProperties.Name="Làm lại" Click="RedoClick">
                         <TextBlock Text="&#xE7A6;" Style="{StaticResource Icon}" />
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" ToolTip="Tìm (Ctrl+F)"
+                            AutomationProperties.Name="Tìm" Click="FindClick">
+                        <TextBlock Text="&#xE721;" Style="{StaticResource Icon}" />
                     </Button>
                 </StackPanel>
             </DockPanel>
@@ -179,7 +196,30 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="2" x:Name="NoticeBar" Visibility="Collapsed" Padding="15,4,10,4"
+        <StackPanel Grid.Row="2">
+        <Border x:Name="FindBar" Visibility="Collapsed" Padding="13,4"
+                Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0,0,0,1"
+                BorderBrush="{DynamicResource BorderSubtleBrush}">
+            <DockPanel LastChildFill="False">
+                <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                        ToolTip="Đóng tìm kiếm (Esc)" AutomationProperties.Name="Đóng tìm kiếm" Click="CloseFindClick"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBox x:Name="FindQuery" Width="235" Margin="0,0,5,0" Padding="7,5"
+                             Background="{DynamicResource EditorBackgroundBrush}"
+                             BorderBrush="{DynamicResource BorderSubtleBrush}"
+                             Foreground="{DynamicResource PrimaryTextBrush}"
+                             CaretBrush="{DynamicResource PrimaryTextBrush}"
+                             AutomationProperties.Name="Từ cần tìm" KeyDown="FindQueryKeyDown" />
+                    <Button Content="&#xE70E;" FontFamily="Segoe MDL2 Assets" ToolTip="Kết quả trước (Shift+F3)"
+                            AutomationProperties.Name="Kết quả trước" Click="FindPreviousClick" />
+                    <Button x:Name="FindNextButton" Content="&#xE70D;" FontFamily="Segoe MDL2 Assets" ToolTip="Kết quả tiếp (F3)"
+                            AutomationProperties.Name="Kết quả tiếp" Click="FindNextClick" />
+                    <TextBlock x:Name="FindMessage" Foreground="{DynamicResource SecondaryTextBrush}"
+                               VerticalAlignment="Center" Margin="8,0" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Border x:Name="NoticeBar" Visibility="Collapsed" Padding="15,4,10,4"
                 Background="{DynamicResource SurfaceBrush}">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe MDL2 Assets"
@@ -189,6 +229,7 @@
                            AutomationProperties.LiveSetting="Polite" />
             </DockPanel>
         </Border>
+        </StackPanel>
 
         <ae:TextEditor Grid.Row="3" x:Name="Editor" Padding="14,11,14,10"
                        Background="{DynamicResource EditorBackgroundBrush}" BorderThickness="0"
@@ -196,7 +237,7 @@
                        LineNumbersForeground="{DynamicResource SecondaryTextBrush}"
                        ShowLineNumbers="True" FontFamily="Cascadia Mono, Consolas"
                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                       AutomationProperties.Name="Văn bản" />
+                       AutomationProperties.Name="Văn bản" PreviewMouseLeftButtonDown="MarkdownLinkClick" />
 
         <Border Grid.Row="4" BorderBrush="{DynamicResource BorderSubtleBrush}"
                 BorderThickness="0,1,0,0" Padding="16,0"

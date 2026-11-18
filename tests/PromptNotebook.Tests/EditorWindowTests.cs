@@ -29,7 +29,15 @@ internal static class EditorWindowTests
                     {
                         await RunOnDispatcherAsync((MainWindow)app.MainWindow, temp.FullName);
                     }
-                    catch (Exception ex) { failure = ex; }
+                    catch (Exception ex)
+                    {
+                        failure = ex;
+                        if (app.MainWindow?.FindName("Tabs") is ListBox tabs)
+                        {
+                            foreach (var tab in tabs.Items.OfType<EditorTab>())
+                                tab.Document.UndoStack.MarkAsOriginalFile();
+                        }
+                    }
                     finally { app.Shutdown(); }
                 });
                 app.Run();
@@ -88,8 +96,7 @@ internal static class EditorWindowTests
         editor.Redo();
         Assert(editor.Text.StartsWith("# **Chào Khầy**", StringComparison.Ordinal), "Redo restores exact edit");
         editor.Undo();
-        var active = (EditorTab)tabs.SelectedItem;
-        await TextFiles.WriteAsync(markdown, active.Document.Text, active.Encoding);
+        await window.SaveActiveAsync(false);
         Assert(await TextFiles.ReadAsync(markdown) == new LoadedText(source, TextEncoding.Utf8Bom), "Reopen saved Markdown");
 
         tabs.SelectedIndex = 1;
@@ -104,6 +111,33 @@ internal static class EditorWindowTests
         theme.IsChecked = true;
         theme.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Assert(((SolidColorBrush)editor.Background).Color != Colors.White, "Dark mode on actual editor");
+
+        var findBox = (TextBox)window.FindName("FindQuery");
+        var findNext = (Button)window.FindName("FindNextButton");
+        findBox.Text = "tiẾng viỆt";
+        findNext.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(editor.SelectedText == "Tiếng Việt", "Find wraps and matches Vietnamese case-insensitively");
+
+        const string markdownEdit = "# Đã sửa\r\n" + source;
+        editor.Document.Replace(0, editor.Document.TextLength, markdownEdit);
+        var status = (TextBlock)window.FindName("SaveStatus");
+        await ObserveAsync(window, () => status.Text.Contains("đã giữ bản nháp", StringComparison.Ordinal), "Debounced draft status");
+        Assert((await TextFiles.ReadAsync(markdown)).Text == source, "The editor leaves the original untouched before Save");
+
+        tabs.SelectedIndex = 1;
+        editor.Document.Replace(0, editor.Document.TextLength, "{\n  ");
+        editor.CaretOffset = editor.Document.TextLength;
+        editor.TextArea.PerformTextInput("}");
+        Assert(editor.Text == "{\n}", "Closing bracket auto-dedents in the actual JSON editor");
+        editor.Undo();
+        Assert(editor.Text == "{\n  ", "One undo reverses bracket insertion and auto-indent");
+        editor.Redo();
+        Assert(editor.Text == "{\n}", "One redo reapplies bracket insertion and auto-indent");
+        await window.SaveAllAsync();
+        Assert((await TextFiles.ReadAsync(markdown)).Text == markdownEdit &&
+            (await TextFiles.ReadAsync(json)).Text == "{\n}", "Save All persists both formats");
+        var settings = new SettingsService(Path.Combine(folder, "settings.json")).Load();
+        Assert(settings.RecentFiles.Count == 2 && settings.RecentFiles[0] == json, "Recent files persist in JSON settings");
         window.Close();
         await ObserveAsync(window, () => !window.IsVisible, "Clean window closes");
         Console.WriteLine("[PASS] Real WPF window, tabs, live Markdown, local images, themes, source editing and selection");

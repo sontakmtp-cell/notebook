@@ -77,6 +77,7 @@ foreach (var dark in new[] { true, false })
 }
 Console.WriteLine("[PASS] JSON format / minify, validation, indentation and both color palettes");
 MarkdownTests.Run();
+await RecoveryTests.RunAsync();
 await EditorWindowTests.RunAsync();
 
 static void Assert(bool condition, string description)

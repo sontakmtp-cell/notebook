@@ -31,6 +31,12 @@ public partial class MainWindow
     public Task OpenFromStartupAsync(IEnumerable<string> paths) =>
         RunFileOperationAsync(() => OpenPathsAsync(paths));
 
+    internal Task StartAsync(IEnumerable<string> paths) => RunFileOperationAsync(async () =>
+    {
+        await RestoreDraftsAsync();
+        await OpenPathsAsync(paths);
+    });
+
     private void FilesDragOver(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop))
@@ -81,15 +87,28 @@ public partial class MainWindow
             Tabs.SelectedItem = alreadyOpen;
             Tabs.ScrollIntoView(alreadyOpen);
             Editor.Focus();
+            RememberFile(path);
             return;
         }
 
-        var file = await TextFiles.ReadAsync(path);
+        var (file, stamp) = await Task.Run(async () =>
+        {
+            var before = FileStamp.Read(path);
+            var loaded = await TextFiles.ReadAsync(path).ConfigureAwait(false);
+            var after = FileStamp.Read(path);
+            if (after is null || before != after)
+                throw new IOException("Tệp thay đổi trong lúc đang mở. Hãy thử mở lại.");
+            return (loaded, after.Value);
+        });
         var placeholder = _tabs.Count == 1 && _active is { FilePath: null, IsDirty: false, Format: FileFormat.Txt } current &&
             current.Document.TextLength == 0 ? current : null;
-        AddTab(new EditorTab(Path.GetFileNameWithoutExtension(path), format, path, file.Text, file.Encoding));
+        AddTab(new EditorTab(Path.GetFileNameWithoutExtension(path), format, path, file.Text, file.Encoding)
+        {
+            SavedStamp = stamp
+        });
         if (placeholder is not null)
             RemoveTab(placeholder);
+        RememberFile(path);
     }
 
     private EditorTab? FindTab(string path) => _tabs.FirstOrDefault(tab =>
@@ -97,8 +116,23 @@ public partial class MainWindow
 
     private async void SaveClick(object sender, RoutedEventArgs e) => await SaveActiveAsync(false);
     private async void SaveAsClick(object sender, RoutedEventArgs e) => await SaveActiveAsync(true);
+    private async void SaveAllClick(object sender, RoutedEventArgs e) => await SaveAllAsync();
 
-    private Task SaveActiveAsync(bool saveAs) => RunFileOperationAsync(async () =>
+    internal Task SaveAllAsync() => RunFileOperationAsync(async () =>
+    {
+        var saved = 0;
+        foreach (var tab in _tabs.Where(tab => tab.IsDirty).ToArray())
+        {
+            if (!await SaveTabAsync(tab))
+                return;
+            saved++;
+        }
+
+        if (saved > 0)
+            ShowNotice($"Đã lưu {saved} tệp.");
+    });
+
+    internal Task SaveActiveAsync(bool saveAs) => RunFileOperationAsync(async () =>
     {
         if (_active is { } tab)
             await SaveTabAsync(tab, saveAs);
@@ -119,8 +153,8 @@ public partial class MainWindow
                 OverwritePrompt = true,
                 Title = "Lưu tệp"
             };
-            if (path is not null)
-                dialog.InitialDirectory = Path.GetDirectoryName(path);
+            if ((path ?? tab.RecoveredFrom) is { } origin)
+                dialog.InitialDirectory = Path.GetDirectoryName(origin);
             if (dialog.ShowDialog(this) != true)
                 return false;
             path = Path.GetFullPath(dialog.FileName);
@@ -133,13 +167,25 @@ public partial class MainWindow
             return false;
         }
 
+        var disk = await Task.Run(() => FileStamp.Read(path));
+        if (!saveAs && tab.FilePath is not null && disk != tab.SavedStamp &&
+            MessageBox.Show(this, $"«{tab.Name}» đã thay đổi trên đĩa. Ghi nội dung trong Notebook vào tệp này?",
+                "Notebook", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return false;
+
         var snapshot = tab.Document.CreateSnapshot();
-        await TextFiles.WriteAsync(path, snapshot.Text, tab.Encoding);
+        tab.SavedStamp = await Task.Run(() => TextFiles.WriteCheckedAsync(path, snapshot.Text, tab.Encoding, disk));
         var changedPresentation = tab.Format != format ||
             (format == FileFormat.Markdown && tab.FilePath != path);
         tab.CompleteSave(path, snapshot.Version!);
         if (changedPresentation && ReferenceEquals(_active, tab))
             ApplyFormat();
+        if (!tab.IsDirty)
+        {
+            _draftVersions.Remove(tab);
+            await RemoveDraftAsync(tab);
+        }
+        RememberFile(path);
         return true;
     }
 
@@ -153,6 +199,7 @@ public partial class MainWindow
                 RemoveTab(tab);
                 if (_tabs.Count == 0)
                     AddNew();
+                await RemoveDraftAsync(tab);
                 Editor.Focus();
             }
         }
@@ -198,4 +245,33 @@ public partial class MainWindow
 
     private static bool IsFileError(Exception ex) =>
         ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException;
+
+    private void RememberFile(string path)
+    {
+        _settings.RecentFiles.RemoveAll(p => p.Equals(path, StringComparison.OrdinalIgnoreCase));
+        _settings.RecentFiles.Insert(0, path);
+        if (_settings.RecentFiles.Count > 10)
+            _settings.RecentFiles.RemoveAt(10);
+        _settingsService.Save(_settings);
+    }
+
+    private void RecentClick(object sender, RoutedEventArgs e)
+    {
+        var button = (System.Windows.Controls.Button)sender;
+        var menu = button.ContextMenu;
+        menu.Items.Clear();
+        foreach (var path in _settings.RecentFiles)
+        {
+            var item = new System.Windows.Controls.MenuItem
+            {
+                Header = new System.Windows.Controls.TextBlock { Text = Path.GetFileName(path) },
+                ToolTip = path
+            };
+            item.Click += async (_, _) => await OpenFromStartupAsync([path]);
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count == 0)
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = "Chưa có tệp gần đây", IsEnabled = false });
+        SettingsClick(sender, e);
+    }
 }

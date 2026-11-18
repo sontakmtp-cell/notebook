@@ -5,6 +5,15 @@ using PromptNotebook.Models;
 namespace PromptNotebook.Services;
 
 public sealed record LoadedText(string Text, TextEncoding Encoding);
+internal readonly record struct FileStamp(long Length, DateTime LastWriteUtc)
+{
+    public static FileStamp? Read(string path)
+    {
+        var file = new FileInfo(path);
+        try { return new FileStamp(file.Length, file.LastWriteTimeUtc); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return null; }
+    }
+}
 
 public static class TextFiles
 {
@@ -59,16 +68,28 @@ public static class TextFiles
         return TextEncoding.Utf8;
     }
 
-    public static async Task WriteAsync(string path, string text, TextEncoding encoding)
+    public static Task WriteAsync(string path, string text, TextEncoding encoding) =>
+        WriteCoreAsync(path, text, encoding, null, false);
+
+    internal static Task<FileStamp> WriteCheckedAsync(string path, string text, TextEncoding encoding, FileStamp? expected) =>
+        WriteCoreAsync(path, text, encoding, expected, true);
+
+    private static async Task<FileStamp> WriteCoreAsync(string path, string text, TextEncoding encoding,
+        FileStamp? expected, bool checkVersion)
     {
         var temporary = Path.Combine(Path.GetDirectoryName(path)!, $".notebook-{Guid.NewGuid():N}.tmp");
         try
         {
             await File.WriteAllTextAsync(temporary, text, Codec(encoding)).ConfigureAwait(false);
-            if (File.Exists(path))
+            var current = FileStamp.Read(path);
+            if (checkVersion && current != expected)
+                throw new IOException("Tệp đích vừa thay đổi. Hãy kiểm tra nội dung trên đĩa và thử lại.");
+
+            if (current is not null)
                 File.Replace(temporary, path, null);
             else
                 File.Move(temporary, path);
+            return FileStamp.Read(path) ?? throw new IOException("Tệp đã lưu không còn tồn tại tại đường dẫn đích.");
         }
         finally
         {

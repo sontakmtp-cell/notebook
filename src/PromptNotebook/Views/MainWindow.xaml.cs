@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ICSharpCode.AvalonEdit.Editing;
 using PromptNotebook.Helpers;
 using PromptNotebook.Markdown;
@@ -30,6 +31,12 @@ public partial class MainWindow : Window
         _settings = settings;
         InitializeComponent();
         _markdown = new MarkdownPresentation(Editor);
+        _recovery = new RecoveryStore(settingsService.RecoveryRoot);
+        _draftTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(900)
+        };
+        _draftTimer.Tick += DraftTick;
         Width = Math.Clamp(settings.WindowWidth, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width));
         Height = Math.Clamp(settings.WindowHeight, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height));
         if (settings.IsMaximized)
@@ -42,11 +49,7 @@ public partial class MainWindow : Window
         Editor.Options.IndentationSize = 4;
         Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateStatus();
         Editor.TextChanged += (_, _) => UpdateStatus();
-        Editor.TextArea.TextEntered += (_, e) =>
-        {
-            if (_active?.Format == FileFormat.Json && e.Text is "}" or "]")
-                JsonIndentation.AlignClosingBracket(Editor.Document, Editor.CaretOffset - 1);
-        };
+        Editor.TextArea.TextEntering += AlignJsonClosingBracket;
         Tabs.ItemsSource = _tabs;
         ApplyEditorSettings();
         AddNew();
@@ -55,6 +58,7 @@ public partial class MainWindow : Window
     private void AddTab(EditorTab tab)
     {
         tab.PropertyChanged += TabPropertyChanged;
+        WatchTab(tab);
         _tabs.Add(tab);
         Tabs.SelectedItem = tab;
         Tabs.ScrollIntoView(tab);
@@ -87,6 +91,7 @@ public partial class MainWindow : Window
         _active = tab;
         Editor.Document = tab.Document;
         NoticeBar.Visibility = Visibility.Collapsed;
+        FindMessage.Text = "";
         ApplyFormat();
         Editor.CaretOffset = Math.Min(tab.Caret, tab.Document.TextLength);
         var anchor = Math.Clamp(tab.SelectionAnchor, 0, tab.Document.TextLength);
@@ -108,7 +113,7 @@ public partial class MainWindow : Window
         CountStatus.Text = $"{tab.Document.LineCount:N0} dòng · {tab.Document.TextLength:N0} ký tự";
         EncodingStatus.Text = tab.Encoding.Label();
         KindStatus.Text = tab.Format.Label();
-        SaveStatus.Text = tab.IsDirty ? "Chưa lưu" : tab.FilePath is null ? "Tệp mới" : "Đã lưu";
+        SaveStatus.Text = tab.IsDirty ? DirtyStatus(tab) : tab.FilePath is null ? "Tệp mới" : "Đã lưu";
         UndoButton.IsEnabled = Editor.CanUndo;
         RedoButton.IsEnabled = Editor.CanRedo;
         Title = $"{tab.Name}{(tab.IsDirty ? " •" : "")} — Notebook";
@@ -116,6 +121,25 @@ public partial class MainWindow : Window
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
+        if (e.Key == Key.F3 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        {
+            FindText(Keyboard.Modifiers == ModifierKeys.Shift);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && FindBar.Visibility == Visibility.Visible)
+        {
+            CloseFind();
+            e.Handled = true;
+            return;
+        }
+        var pressedKey = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Alt) && pressedKey == Key.S)
+        {
+            _ = SaveAllAsync();
+            e.Handled = true;
+            return;
+        }
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
             switch (e.Key)
@@ -129,6 +153,9 @@ public partial class MainWindow : Window
                     break;
                 case Key.O:
                     OpenClick(this, e);
+                    break;
+                case Key.F:
+                    FindClick(this, e);
                     break;
                 case Key.S:
                     _ = SaveActiveAsync(false);
@@ -159,7 +186,7 @@ public partial class MainWindow : Window
                     e.Handled = true;
                     break;
                 case Key.C when _markdown.CodeAtCaret() is { } code:
-                    if (MarkdownPresentation.CopyCode(code))
+                    if (MarkdownPresentation.CopyText(code))
                         ShowNotice("Đã sao chép khối code.");
                     e.Handled = true;
                     break;
@@ -167,6 +194,20 @@ public partial class MainWindow : Window
         }
 
         base.OnPreviewKeyDown(e);
+    }
+
+    private void MarkdownLinkClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_active?.Format != FileFormat.Markdown || Keyboard.Modifiers != ModifierKeys.Control ||
+            Editor.GetPositionFromPoint(e.GetPosition(Editor)) is not { } point)
+            return;
+
+        if (_markdown.LinkAtOffset(Editor.Document.GetOffset(point.Location)) is { } address &&
+            MarkdownPresentation.CopyText(address))
+        {
+            ShowNotice("Đã sao chép địa chỉ liên kết.");
+            e.Handled = true;
+        }
     }
 
     private void SelectNextTab(int direction)
@@ -205,18 +246,21 @@ public partial class MainWindow : Window
             Tabs.SelectedItem = _tabs[index + (index == _tabs.Count - 1 ? -1 : 1)];
 
         tab.PropertyChanged -= TabPropertyChanged;
+        UnwatchTab(tab);
         _tabs.Remove(tab);
     }
 
     private void UndoClick(object sender, RoutedEventArgs e)
     {
-        Editor.Undo();
+        if (!Editor.IsReadOnly)
+            Editor.Undo();
         Editor.Focus();
     }
 
     private void RedoClick(object sender, RoutedEventArgs e)
     {
-        Editor.Redo();
+        if (!Editor.IsReadOnly)
+            Editor.Redo();
         Editor.Focus();
     }
 
@@ -295,7 +339,7 @@ public partial class MainWindow : Window
             return;
 
         // Leave the current Closing event before making a second Close request.
-        await System.Windows.Threading.Dispatcher.Yield();
+        await Dispatcher.Yield();
         var approved = false;
         await RunFileOperationAsync(async () =>
         {
@@ -306,6 +350,16 @@ public partial class MainWindow : Window
                 {
                     if (!await ConfirmCloseAsync(tab))
                         return;
+                }
+                _ending = true;
+                _draftTimer.Stop();
+                try
+                {
+                    await _recovery.FinishAsync();
+                }
+                catch (Exception ex) when (IsFileError(ex))
+                {
+                    _recovery.Dispose();
                 }
                 approved = true;
             }

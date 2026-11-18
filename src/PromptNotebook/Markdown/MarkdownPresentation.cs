@@ -50,9 +50,9 @@ public sealed class MarkdownPresentation : IDisposable
         _colorizer.SetTheme(dark);
         if (ReferenceEquals(tab, _tab))
         {
-            if (_filePath != tab?.FilePath)
+            if (_filePath != (tab?.FilePath ?? tab?.RecoveredFrom))
             {
-                _filePath = tab?.FilePath;
+                _filePath = tab?.FilePath ?? tab?.RecoveredFrom;
                 _images.Reset(_filePath);
             }
 
@@ -62,7 +62,7 @@ public sealed class MarkdownPresentation : IDisposable
         }
 
         _tab = tab;
-        _filePath = tab?.FilePath;
+        _filePath = tab?.FilePath ?? tab?.RecoveredFrom;
         _images.Reset(_filePath);
         _layout = null;
         _layoutVersion = null;
@@ -90,6 +90,15 @@ public sealed class MarkdownPresentation : IDisposable
     public bool IsEditing(DocumentLine line) => ReferenceEquals(line, _editingLine);
 
     public string? CodeAtCaret() => _editingLine is { IsDeleted: false } line ? LayoutFor(line)?.Fence?.Code : null;
+
+    public string? LinkAtOffset(int offset)
+    {
+        if (_tab is null)
+            return null;
+        var line = _tab.Document.GetLineByOffset(offset);
+        var column = offset - line.Offset;
+        return LayoutFor(line)?.Links.FirstOrDefault(link => column >= link.Start && column <= link.End).Address;
+    }
 
     private void TextChanged(object? sender, EventArgs e)
     {
@@ -224,13 +233,13 @@ public sealed class MarkdownPresentation : IDisposable
         button.SetResourceReference(Control.ForegroundProperty, "AccentBrush");
         button.Click += (_, _) =>
         {
-            if (CopyCode(code))
+            if (CopyText(code))
                 button.Content = "Đã sao chép";
         };
         return new InlineObjectElement(projection.Length, button);
     }
 
-    public static bool CopyCode(string code)
+    public static bool CopyText(string code)
     {
         if (code.Length == 0)
             return false;

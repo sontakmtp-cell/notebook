@@ -13,6 +13,7 @@ public enum InlineStyle { Bold = 1, Italic = 2, Strike = 4, Code = 8, Link = 16 
 public enum ProjectionKind { Hidden, Marker, TableDivider, Image, CopyCode }
 
 public readonly record struct StyledRun(int Start, int Length, InlineStyle Style);
+public readonly record struct MarkdownLink(int Start, int End, string Address);
 
 public readonly record struct Projection(int Start, int Length, ProjectionKind Kind, string Text = "", string? Target = null)
 {
@@ -38,13 +39,15 @@ public sealed class MarkdownLine(string source)
     public int CodeStart { get; set; }
     public List<StyledRun> Styles { get; } = [];
     public List<Projection> Projections { get; } = [];
+    public List<MarkdownLink> Links { get; } = [];
 
     public bool HasSamePresentation(MarkdownLine? other) => other is not null &&
         Source == other.Source && Heading == other.Heading && QuoteDepth == other.QuoteDepth &&
         IsRule == other.IsRule && IsTable == other.IsTable && IsTableHeader == other.IsTableHeader &&
         IsTableSeparator == other.IsTableSeparator && CodeLine == other.CodeLine && CodeStart == other.CodeStart &&
         Fence?.CodeHash == other.Fence?.CodeHash && Fence?.Language == other.Fence?.Language &&
-        Styles.SequenceEqual(other.Styles) && Projections.SequenceEqual(other.Projections);
+        Styles.SequenceEqual(other.Styles) && Projections.SequenceEqual(other.Projections) &&
+        Links.SequenceEqual(other.Links);
 }
 
 public sealed class MarkdownLayout
@@ -401,11 +404,13 @@ public sealed class MarkdownLayout
                 Style(first.Span.Start, last.Span.End + 1, InlineStyle.Link);
                 Project(start, first.Span.Start, ProjectionKind.Hidden);
                 Project(last.Span.End + 1, end, ProjectionKind.Hidden);
+                AddLink(first.Span.Start, last.Span.End + 1, ((LinkInline)inline).Url);
                 break;
-            case AutolinkInline:
+            case AutolinkInline autoLink:
                 Style(start + 1, end - 1, InlineStyle.Link);
                 Project(start, start + 1, ProjectionKind.Hidden);
                 Project(end - 1, end, ProjectionKind.Hidden);
+                AddLink(start + 1, end - 1, autoLink.IsEmail ? "mailto:" + autoLink.Url : autoLink.Url);
                 break;
         }
 
@@ -413,6 +418,19 @@ public sealed class MarkdownLayout
         {
             foreach (var child in container)
                 VisitInline(child);
+        }
+    }
+
+    private void AddLink(int start, int end, string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address) || start < 0)
+            return;
+        for (var index = LineIndex(start); index < _starts.Length && _starts[index] < end; index++)
+        {
+            var from = Math.Max(_starts[index], start);
+            var to = Math.Min(_ends[index], end);
+            if (to > from)
+                Line(index).Links.Add(new MarkdownLink(from - _starts[index], to - _starts[index], address));
         }
     }
 
