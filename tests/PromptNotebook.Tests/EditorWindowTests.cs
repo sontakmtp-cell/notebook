@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ICSharpCode.AvalonEdit;
@@ -145,6 +146,7 @@ internal static class EditorWindowTests
         theme.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Assert(((SolidColorBrush)editor.Background).Color != Colors.White, "Dark mode on actual editor");
 
+        ExerciseReplace(window, editor, tabs);
         var findBox = (TextBox)window.FindName("FindQuery");
         var findNext = (Button)window.FindName("FindNextButton");
         findBox.Text = "tiẾng viỆt";
@@ -192,6 +194,55 @@ internal static class EditorWindowTests
         await ExerciseLargeMarkdownAsync(window, folder, editor, view);
         await ExerciseSessionRestoreAsync(window, folder, markdown, json, extra, markdownEdit);
         Console.WriteLine("[PASS] Real WPF window, tabs, live Markdown, local images, themes, source editing and selection");
+    }
+
+    private static void ExerciseReplace(MainWindow window, TextEditor editor, ListBox tabs)
+    {
+        var original = editor.Text;
+        const string appended = "Tiếng Việt | TIẾNG VIỆT | tiếng việt";
+        editor.Document.Insert(original.Length, appended);
+        var source = editor.Text;
+        var otherTab = (EditorTab)tabs.Items[1];
+        var otherText = otherTab.Document.Text;
+
+        var shortcut = window.InputBindings.OfType<KeyBinding>()
+            .Single(binding => binding.Key == Key.H && binding.Modifiers == ModifierKeys.Control);
+        var command = (RoutedCommand)shortcut.Command;
+        editor.Select(original.Length, "Tiếng Việt".Length);
+        Assert(command.CanExecute(null, editor.TextArea), "Ctrl+H is available from the editor");
+        command.Execute(null, editor.TextArea);
+        var replaceRow = (FrameworkElement)window.FindName("ReplaceRow");
+        var query = (TextBox)window.FindName("FindQuery");
+        var replacement = (TextBox)window.FindName("ReplaceQuery");
+        var replaceOne = (Button)window.FindName("ReplaceOneButton");
+        var replaceAll = (Button)window.FindName("ReplaceAllButton");
+        var message = (TextBlock)window.FindName("FindMessage");
+        Assert(replaceRow.Visibility == Visibility.Visible && query.Text == "Tiếng Việt",
+            "Ctrl+H opens replace and prefills selected text");
+
+        replacement.Text = "Đã đổi";
+        replaceOne.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(editor.Text == original + "Đã đổi | TIẾNG VIỆT | tiếng việt" &&
+            editor.SelectedText == "TIẾNG VIỆT", "Replace one changes the selection and finds the next match");
+        editor.Undo();
+        Assert(editor.Text == source, "Undo restores the one replacement");
+
+        replacement.Text = "";
+        replaceAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(editor.Text == source.Replace(query.Text, "", StringComparison.OrdinalIgnoreCase) &&
+            message.Text == "Đã thay 4 chỗ." && otherTab.Document.Text == otherText,
+            "Replace All deletes case-insensitive matches in the current tab only");
+        Assert(editor.Undo() && editor.Text == source, "One undo restores all replacements");
+        Assert(editor.Redo() && !editor.Text.Contains(query.Text, StringComparison.OrdinalIgnoreCase),
+            "One redo reapplies all replacements");
+        replaceAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(message.Text == "Không tìm thấy", "Replace All reports when there are no matches");
+        editor.Undo();
+        editor.Undo();
+        Assert(editor.Text == original, "Replacement preserves Markdown source outside matched text");
+        editor.Select(0, 0);
+        ((Button)window.FindName("CloseFindButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Console.WriteLine("[PASS] Ctrl+H, replace one / all, delete matches, current-tab scope and grouped undo");
     }
 
     private static async Task ExerciseSessionRestoreAsync(MainWindow window, string folder,

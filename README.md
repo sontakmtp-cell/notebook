@@ -23,8 +23,11 @@ Mở `PromptNotebook.exe` trên Windows x64. Máy cần **.NET 8 Desktop Runtime
 | Ctrl+W / Ctrl+Tab / Ctrl+Shift+Tab | Đóng tab / tab tiếp / tab trước |
 | Ctrl+Z / Ctrl+Y | Hoàn tác / làm lại |
 | Ctrl+F / F3 / Shift+F3 | Tìm / kết quả tiếp / kết quả trước |
+| Ctrl+H | Tìm và thay chữ trong tab hiện tại |
 | Ctrl+Shift+I | Định dạng JSON |
 | Ctrl+bấm vào liên kết Markdown | Sao chép địa chỉ liên kết |
+
+Trong thanh **Ctrl+H**, dùng **Thay** để sửa một chỗ hoặc **Thay tất cả** cho tab hiện tại. Để trống **Thay bằng** nếu muốn xóa chữ tìm được. Một lần **Ctrl+Z** hoàn tác toàn bộ thao tác **Thay tất cả**.
 
 Ảnh Markdown hỗ trợ các tệp ảnh cục bộ mà Windows đọc được. Lưu tệp Markdown trước khi dùng đường dẫn ảnh tương đối. Với ảnh trên web, Notebook hiện mô tả thay thế. Code fence có màu cú pháp cho các ngôn ngữ có sẵn như JSON, C#, JavaScript, Python và XML. Khối lớn vẫn có nền riêng và chữ đơn cách.
 

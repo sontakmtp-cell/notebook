@@ -9,6 +9,12 @@
         WindowStartupLocation="CenterScreen" Closing="OnClosing"
         SourceInitialized="OnSourceInitialized" AllowDrop="True"
         PreviewDragOver="FilesDragOver" PreviewDrop="FilesDrop">
+    <Window.InputBindings>
+        <KeyBinding Key="H" Modifiers="Control" Command="ApplicationCommands.Replace" />
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Replace" Executed="ReplaceCommandExecuted" />
+    </Window.CommandBindings>
     <Window.Resources>
         <Style x:Key="Icon" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
@@ -24,6 +30,20 @@
         <Style x:Key="StatusText" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,18,0" />
+        </Style>
+        <Style x:Key="FindField" TargetType="TextBox">
+            <Setter Property="Width" Value="235" />
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource PrimaryTextBrush}" />
+        </Style>
+        <Style x:Key="FindLabel" TargetType="TextBlock">
+            <Setter Property="Width" Value="69" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
         </Style>
     </Window.Resources>
 
@@ -116,7 +136,7 @@
                             AutomationProperties.Name="Làm lại" Click="RedoClick">
                         <TextBlock Text="&#xE7A6;" Style="{StaticResource Icon}" />
                     </Button>
-                    <Button Style="{StaticResource IconButton}" ToolTip="Tìm (Ctrl+F)"
+                    <Button Style="{StaticResource IconButton}" ToolTip="Tìm (Ctrl+F) · Thay chữ (Ctrl+H)"
                             AutomationProperties.Name="Tìm" Click="FindClick">
                         <TextBlock Text="&#xE721;" Style="{StaticResource Icon}" />
                     </Button>
@@ -200,24 +220,33 @@
         <Border x:Name="FindBar" Visibility="Collapsed" Padding="13,4"
                 Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource BorderSubtleBrush}">
-            <DockPanel LastChildFill="False">
-                <Button DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="10"
-                        ToolTip="Đóng tìm kiếm (Esc)" AutomationProperties.Name="Đóng tìm kiếm" Click="CloseFindClick"/>
-                <StackPanel Orientation="Horizontal">
-                    <TextBox x:Name="FindQuery" Width="235" Margin="0,0,5,0" Padding="7,5"
-                             Background="{DynamicResource EditorBackgroundBrush}"
-                             BorderBrush="{DynamicResource BorderSubtleBrush}"
-                             Foreground="{DynamicResource PrimaryTextBrush}"
-                             CaretBrush="{DynamicResource PrimaryTextBrush}"
-                             AutomationProperties.Name="Từ cần tìm" KeyDown="FindQueryKeyDown" />
-                    <Button Content="&#xE70E;" FontFamily="Segoe MDL2 Assets" ToolTip="Kết quả trước (Shift+F3)"
-                            AutomationProperties.Name="Kết quả trước" Click="FindPreviousClick" />
-                    <Button x:Name="FindNextButton" Content="&#xE70D;" FontFamily="Segoe MDL2 Assets" ToolTip="Kết quả tiếp (F3)"
-                            AutomationProperties.Name="Kết quả tiếp" Click="FindNextClick" />
-                    <TextBlock x:Name="FindMessage" Foreground="{DynamicResource SecondaryTextBrush}"
-                               VerticalAlignment="Center" Margin="8,0" AutomationProperties.LiveSetting="Polite" />
+            <StackPanel>
+                <DockPanel LastChildFill="False">
+                    <Button x:Name="CloseFindButton" DockPanel.Dock="Right" Content="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                            ToolTip="Đóng tìm kiếm (Esc)" AutomationProperties.Name="Đóng tìm kiếm" Click="CloseFindClick" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Tìm" Style="{StaticResource FindLabel}" />
+                        <TextBox x:Name="FindQuery" Style="{StaticResource FindField}"
+                                 AutomationProperties.Name="Từ cần tìm" KeyDown="FindQueryKeyDown" />
+                        <Button Content="&#xE70E;" FontFamily="Segoe MDL2 Assets" ToolTip="Kết quả trước (Shift+F3)"
+                                AutomationProperties.Name="Kết quả trước" Click="FindPreviousClick" />
+                        <Button x:Name="FindNextButton" Content="&#xE70D;" FontFamily="Segoe MDL2 Assets" ToolTip="Kết quả tiếp (F3)"
+                                AutomationProperties.Name="Kết quả tiếp" Click="FindNextClick" />
+                        <TextBlock x:Name="FindMessage" Foreground="{DynamicResource SecondaryTextBrush}"
+                                   VerticalAlignment="Center" Margin="8,0" AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </DockPanel>
+                <StackPanel x:Name="ReplaceRow" Orientation="Horizontal" Visibility="Collapsed" Margin="0,4,0,0">
+                    <TextBlock Text="Thay bằng" Style="{StaticResource FindLabel}" />
+                    <TextBox x:Name="ReplaceQuery" Style="{StaticResource FindField}"
+                             AutomationProperties.Name="Thay bằng" KeyDown="ReplaceQueryKeyDown"
+                             ToolTip="Để trống nếu muốn xóa chữ tìm được." />
+                    <Button x:Name="ReplaceOneButton" Content="Thay" Style="{StaticResource ToolButton}"
+                            Click="ReplaceOneClick" ToolTip="Thay một chỗ rồi tìm chỗ tiếp theo." />
+                    <Button x:Name="ReplaceAllButton" Content="Thay tất cả" Style="{StaticResource ToolButton}"
+                            Click="ReplaceAllClick" ToolTip="Thay tất cả chỗ khớp trong tab hiện tại." />
                 </StackPanel>
-            </DockPanel>
+            </StackPanel>
         </Border>
         <Border x:Name="NoticeBar" Visibility="Collapsed" Padding="15,4,10,4"
                 Background="{DynamicResource SurfaceBrush}">

@@ -128,7 +128,7 @@ public partial class MainWindow : Window
     {
         if (e.Key == Key.F3 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
-            FindText(Keyboard.Modifiers == ModifierKeys.Shift);
+            _ = FindTextAsync(Keyboard.Modifiers == ModifierKeys.Shift);
             e.Handled = true;
             return;
         }
