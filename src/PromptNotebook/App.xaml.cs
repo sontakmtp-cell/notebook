@@ -1,4 +1,3 @@
-using System.IO;
 using System.Windows;
 using PromptNotebook.Services;
 using PromptNotebook.Views;
@@ -15,6 +14,8 @@ public partial class App : Application
         ApplyTheme(settings.IsDarkMode);
         MainWindow = new MainWindow(store, settings);
         MainWindow.Show();
+        if (e.Args.Length > 0)
+            _ = ((MainWindow)MainWindow).OpenFromStartupAsync(e.Args);
     }
 
     public static void ApplyTheme(bool dark)

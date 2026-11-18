@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -7,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Editing;
+using PromptNotebook.Helpers;
 using PromptNotebook.Models;
 using PromptNotebook.Services;
 
@@ -37,9 +39,14 @@ public partial class MainWindow : Window
         Editor.Options.IndentationSize = 4;
         Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateStatus();
         Editor.TextChanged += (_, _) => UpdateStatus();
+        Editor.TextArea.TextEntered += (_, e) =>
+        {
+            if (_active?.Format == FileFormat.Json && e.Text is "}" or "]")
+                JsonIndentation.AlignClosingBracket(Editor.Document, Editor.CaretOffset - 1);
+        };
         Tabs.ItemsSource = _tabs;
         ApplyEditorSettings();
-        AddTab(new EditorTab($"Không tên {++_untitledCount}"));
+        AddNew();
     }
 
     private void AddTab(EditorTab tab)
@@ -76,6 +83,8 @@ public partial class MainWindow : Window
 
         _active = tab;
         Editor.Document = tab.Document;
+        NoticeBar.Visibility = Visibility.Collapsed;
+        ApplyFormat();
         Editor.CaretOffset = Math.Min(tab.Caret, tab.Document.TextLength);
         var anchor = Math.Clamp(tab.SelectionAnchor, 0, tab.Document.TextLength);
         var end = Math.Clamp(tab.SelectionEnd, 0, tab.Document.TextLength);
@@ -94,9 +103,9 @@ public partial class MainWindow : Window
         var caret = Editor.TextArea.Caret;
         PositionStatus.Text = $"Dòng {caret.Line}, Cột {caret.Column}";
         CountStatus.Text = $"{tab.Document.LineCount:N0} dòng · {tab.Document.TextLength:N0} ký tự";
-        EncodingStatus.Text = "UTF-8";
-        KindStatus.Text = "TXT";
-        SaveStatus.Text = tab.IsDirty ? "Chưa lưu" : "Đã lưu";
+        EncodingStatus.Text = tab.Encoding.Label();
+        KindStatus.Text = tab.Format.Label();
+        SaveStatus.Text = tab.IsDirty ? "Chưa lưu" : tab.FilePath is null ? "Tệp mới" : "Đã lưu";
         UndoButton.IsEnabled = Editor.CanUndo;
         RedoButton.IsEnabled = Editor.CanRedo;
         Title = $"{tab.Name}{(tab.IsDirty ? " •" : "")} — Notebook";
@@ -113,7 +122,13 @@ public partial class MainWindow : Window
                     break;
                 case Key.W:
                     if (_active is { } tab)
-                        CloseTab(tab);
+                        _ = CloseTabAsync(tab);
+                    break;
+                case Key.O:
+                    OpenClick(this, e);
+                    break;
+                case Key.S:
+                    _ = SaveActiveAsync(false);
                     break;
                 case Key.Tab:
                     SelectNextTab(1);
@@ -124,10 +139,23 @@ public partial class MainWindow : Window
             }
             e.Handled = true;
         }
-        else if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.Tab)
+        else if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
-            SelectNextTab(-1);
-            e.Handled = true;
+            switch (e.Key)
+            {
+                case Key.Tab:
+                    SelectNextTab(-1);
+                    e.Handled = true;
+                    break;
+                case Key.S:
+                    _ = SaveActiveAsync(true);
+                    e.Handled = true;
+                    break;
+                case Key.I:
+                    _ = RunJsonActionAsync(true);
+                    e.Handled = true;
+                    break;
+            }
         }
 
         base.OnPreviewKeyDown(e);
@@ -154,34 +182,23 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void NewClick(object sender, RoutedEventArgs e) =>
-        AddTab(new EditorTab($"Không tên {++_untitledCount}"));
+    private void NewClick(object sender, RoutedEventArgs e) => AddNew();
 
-    private void CloseTabClick(object sender, RoutedEventArgs e)
+    private async void CloseTabClick(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).DataContext is EditorTab tab)
-            CloseTab(tab);
+            await CloseTabAsync(tab);
     }
 
-    private void CloseTab(EditorTab tab)
+    private void RemoveTab(EditorTab tab)
     {
-        if (!CanDiscard(tab))
-            return;
-
         var index = _tabs.IndexOf(tab);
         if (ReferenceEquals(_active, tab) && _tabs.Count > 1)
             Tabs.SelectedItem = _tabs[index + (index == _tabs.Count - 1 ? -1 : 1)];
 
         tab.PropertyChanged -= TabPropertyChanged;
         _tabs.Remove(tab);
-        if (_tabs.Count == 0)
-            NewClick(this, new RoutedEventArgs());
-        Editor.Focus();
     }
-
-    private bool CanDiscard(EditorTab tab) => !tab.IsDirty ||
-        MessageBox.Show(this, $"Bỏ thay đổi trong «{tab.Name}»?", "Notebook",
-            MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
 
     private void UndoClick(object sender, RoutedEventArgs e)
     {
@@ -207,6 +224,7 @@ public partial class MainWindow : Window
         _settings.IsDarkMode = DarkModeItem.IsChecked;
         App.ApplyTheme(_settings.IsDarkMode);
         ApplyEditorSettings();
+        ApplyFormat();
     }
 
     private void WrapClick(object sender, RoutedEventArgs e)
@@ -252,17 +270,46 @@ public partial class MainWindow : Window
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private async void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (!_tabs.All(CanDiscard))
+        if (_allowWindowClose)
         {
-            e.Cancel = true;
+            _settings.WindowWidth = RestoreBounds.Width;
+            _settings.WindowHeight = RestoreBounds.Height;
+            _settings.IsMaximized = WindowState == WindowState.Maximized;
+            _settingsService.Save(_settings);
             return;
         }
 
-        _settings.WindowWidth = RestoreBounds.Width;
-        _settings.WindowHeight = RestoreBounds.Height;
-        _settings.IsMaximized = WindowState == WindowState.Maximized;
-        _settingsService.Save(_settings);
+        e.Cancel = true;
+        if (_fileOperation)
+            return;
+
+        // Leave the current Closing event before making a second Close request.
+        await System.Windows.Threading.Dispatcher.Yield();
+        var approved = false;
+        await RunFileOperationAsync(async () =>
+        {
+            Editor.IsReadOnly = true;
+            try
+            {
+                foreach (var tab in _tabs.ToArray())
+                {
+                    if (!await ConfirmCloseAsync(tab))
+                        return;
+                }
+                approved = true;
+            }
+            finally
+            {
+                Editor.IsReadOnly = false;
+            }
+        });
+
+        if (approved)
+        {
+            _allowWindowClose = true;
+            Close();
+        }
     }
 }

@@ -1,22 +1,47 @@
 using ICSharpCode.AvalonEdit.Document;
 using PromptNotebook.Helpers;
+using System.IO;
 
 namespace PromptNotebook.Models;
 
 public sealed class EditorTab : ObservableObject
 {
     private bool _isDirty;
+    private string? _path;
+    private readonly string _untitledName;
+    private FileFormat _format;
 
-    public EditorTab(string name)
+    public EditorTab(string name, FileFormat format = FileFormat.Txt, string? path = null,
+        string text = "", TextEncoding encoding = TextEncoding.Utf8)
     {
-        Name = name;
-        Document = new TextDocument();
+        _untitledName = name;
+        _path = path;
+        _format = format;
+        Encoding = encoding;
+        Document = new TextDocument(text);
         Document.UndoStack.MarkAsOriginalFile();
         Document.UndoStack.PropertyChanged += (_, _) => IsDirty = !Document.UndoStack.IsOriginalFile;
     }
 
     public TextDocument Document { get; }
-    public string Name { get; }
+    public string Name => _path is null ? _untitledName + Format.Extension() : Path.GetFileName(_path);
+    public string ToolTip => _path ?? Name;
+    public string? FilePath => _path;
+    public FileFormat Format => _format;
+    public TextEncoding Encoding { get; }
+
+    public void CompleteSave(string path, ITextSourceVersion version)
+    {
+        _path = path;
+        _format = FileFormats.FromPath(path);
+        if (ReferenceEquals(version, Document.Version))
+            Document.UndoStack.MarkAsOriginalFile();
+        else
+            Document.UndoStack.DiscardOriginalFileMarker();
+
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(ToolTip));
+    }
     public bool IsDirty
     {
         get => _isDirty;
