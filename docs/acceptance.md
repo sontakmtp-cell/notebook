@@ -5,7 +5,7 @@ Kiểm tra ngày 18/11/2026 trên Windows 11 Pro 24H2 (build 26100), Core i3-121
 | Hạng mục | Kết quả |
 | --- | --- |
 | TXT và Unicode | Mở, sửa và lưu lại tiếng Việt, chữ Trung Quốc và emoji. Kiểm tra từng byte cho UTF-8, UTF-8 BOM, UTF-16 LE/BE có BOM và các mẫu UTF-16 LE/BE nhận diện được dù thiếu BOM. Giữ LF và CRLF trong cùng tệp. |
-| JSON | Định dạng, thu gọn, tô màu cả hai giao diện, báo dòng/cột sai và tự thụt lề. Kiểm tra thao tác hoàn tác/làm lại cùng thay đổi thụt lề. Lỗi thêm dòng trắng khi định dạng trên Windows được phát hiện khi thử desktop và đã có bài kiểm tra hồi quy chạy qua. |
+| JSON | Định dạng, thu gọn, tô màu cả hai giao diện, báo dòng và cột có lỗi, tự thụt lề. Kiểm tra thao tác hoàn tác/làm lại cùng thay đổi thụt lề. Lỗi thêm dòng trắng khi định dạng trên Windows được phát hiện khi thử desktop và đã có bài kiểm tra hồi quy chạy qua. |
 | Markdown | Một AvalonEdit định dạng nội dung ngay tại chỗ. Kiểm tra tiêu đề, kiểu chữ, danh sách lồng, trích dẫn, liên kết, ảnh, bảng, đường kẻ và code fence. Nhấn vào dòng làm hiện cú pháp gốc. Đã sửa, sao chép/dán, hoàn tác/làm lại, lưu và đọc lại đúng Markdown và BOM. Nút Sao chép code đưa phần mã vào clipboard. |
 | Tab, tìm kiếm, tệp | Mở các tab thật, giữ tài liệu và lịch sử riêng, tìm tiếng Việt không phân biệt hoa/thường, Lưu tất cả, tệp gần đây, và hộp thoại Hủy/Bỏ thay đổi khi đóng. Kiểm tra không ghi đè khi dấu thời gian hoặc kích thước tệp đích vừa thay đổi. |
 | Khôi phục | Bản nháp được ghi sau khi ngừng gõ. Kiểm tra bằng cách giải phóng khóa của phiên trước mà chưa dọn bản nháp, sau đó phục hồi qua phiên mới. Bản nháp của phiên đang chạy không bị lấy sang phiên khác. |
@@ -15,8 +15,8 @@ Kiểm tra ngày 18/11/2026 trên Windows 11 Pro 24H2 (build 26100), Core i3-121
 
 ## Đo trên máy thử
 
-- Cửa sổ trống xuất hiện trong **722–926 ms** ở ba lần khởi chạy liên tiếp. Working set sau khoảng nửa giây là **119,7–120,8 MiB**. Bộ nhớ riêng là **77,4–78,2 MiB**.
-- Khi mở ba tệp nhỏ từ dòng lệnh, tiêu đề tab Markdown xuất hiện sau **956 ms**. Working set là **132,3 MiB**.
+- Trên bản đóng gói 2.0.0, cửa sổ trống xuất hiện trong **775–886 ms** ở ba lần khởi chạy liên tiếp. Working set sau khoảng nửa giây là **120,3–122,4 MiB**. Bộ nhớ riêng là **76,3–78,1 MiB**.
+- Khi mở ba tệp nhỏ từ dòng lệnh, tiêu đề tab Markdown xuất hiện sau **806 ms**. Working set là **130,1 MiB**.
 - Với Markdown **1.520.000 byte, 64.001 dòng**, mở tệp mất **101–153 ms**. Vùng nhìn đầu tiên định dạng xong sau **389–476 ms** và có **21 dòng** được AvalonEdit dựng trong vùng nhìn. Đây là số đo trên cấu hình trên.
 
 ## Chạy lại
