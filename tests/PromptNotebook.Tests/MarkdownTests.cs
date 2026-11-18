@@ -82,6 +82,15 @@ internal static class MarkdownTests
                     "Styles map onto original source");
             }
         }
+        var random = new Random(41);
+        string[] fragments = ["# Title", "  - nested", "  > > quote", "| a | \\| |", "| - | - |",
+            "```js", "````", "~~~", "[a](./b.txt)", "![](./x.png)", "***", "   ", "text 😀", ""];
+        for (var i = 0; i < 1_000; i++)
+        {
+            var specimen = string.Join(i % 2 == 0 ? "\r\n" : "\n",
+                Enumerable.Range(0, random.Next(1, 25)).Select(_ => fragments[random.Next(fragments.Length)]));
+            _ = MarkdownLayout.Parse(specimen);
+        }
         Console.WriteLine("[PASS] Markdown AST spans, heading and inline styles, quotes, lists, links, images, rules, fences and tables");
     }
 

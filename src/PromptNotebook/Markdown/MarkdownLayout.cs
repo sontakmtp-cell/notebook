@@ -7,7 +7,6 @@ using Markdig.Syntax.Inlines;
 
 namespace PromptNotebook.Markdown;
 
-[Flags]
 public enum InlineStyle { Bold = 1, Italic = 2, Strike = 4, Code = 8, Link = 16 }
 
 public enum ProjectionKind { Hidden, Marker, TableDivider, Image, CopyCode }
@@ -34,6 +33,7 @@ public sealed class MarkdownLine(string source)
     public bool IsTable { get; set; }
     public bool IsTableHeader { get; set; }
     public bool IsTableSeparator { get; set; }
+    public int TableSeparatorColumns { get; set; }
     public MarkdownFence? Fence { get; set; }
     public int CodeLine { get; set; }
     public int CodeStart { get; set; }
@@ -44,13 +44,25 @@ public sealed class MarkdownLine(string source)
     public bool HasSamePresentation(MarkdownLine? other) => other is not null &&
         Source == other.Source && Heading == other.Heading && QuoteDepth == other.QuoteDepth &&
         IsRule == other.IsRule && IsTable == other.IsTable && IsTableHeader == other.IsTableHeader &&
-        IsTableSeparator == other.IsTableSeparator && CodeLine == other.CodeLine && CodeStart == other.CodeStart &&
+        IsTableSeparator == other.IsTableSeparator && TableSeparatorColumns == other.TableSeparatorColumns &&
+        CodeLine == other.CodeLine && CodeStart == other.CodeStart &&
         Fence?.CodeHash == other.Fence?.CodeHash && Fence?.Language == other.Fence?.Language &&
         Styles.SequenceEqual(other.Styles) && Projections.SequenceEqual(other.Projections) &&
         Links.SequenceEqual(other.Links);
 }
 
 public sealed class MarkdownLayout
+{
+    private readonly Dictionary<int, MarkdownLine> _lines;
+
+    internal MarkdownLayout(Dictionary<int, MarkdownLine> lines) => _lines = lines;
+
+    public static MarkdownLayout Parse(string source) => new LayoutBuilder(source).Build();
+
+    public MarkdownLine? GetLine(int oneBasedLineNumber) => _lines.GetValueOrDefault(oneBasedLineNumber - 1);
+}
+
+file sealed class LayoutBuilder
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UsePreciseSourceLocation()
@@ -64,7 +76,7 @@ public sealed class MarkdownLayout
     private readonly int[] _ends;
     private readonly Dictionary<int, MarkdownLine> _lines = [];
 
-    private MarkdownLayout(string source)
+    public LayoutBuilder(string source)
     {
         _source = source;
         var starts = new List<int> { 0 };
@@ -84,23 +96,37 @@ public sealed class MarkdownLayout
         _ends = ends.ToArray();
     }
 
-    public static MarkdownLayout Parse(string source)
+    public MarkdownLayout Build()
     {
-        var layout = new MarkdownLayout(source);
-        var document = Markdig.Markdown.Parse(source, Pipeline);
+        var document = Markdig.Markdown.Parse(_source, Pipeline);
         foreach (var block in document)
-            layout.VisitBlock(block, 0);
+            VisitBlock(block, 0);
 
-        foreach (var (index, line) in layout._lines)
+        foreach (var (index, line) in _lines)
         {
             if (line.QuoteDepth > 0)
-                layout.AddQuoteMarkers(index, line);
-            line.Projections.Sort((left, right) => left.Start.CompareTo(right.Start));
+                AddQuoteMarkers(index, line);
+            SortProjections(line.Projections);
         }
-        return layout;
+        return new MarkdownLayout(_lines);
     }
 
-    public MarkdownLine? GetLine(int oneBasedLineNumber) => _lines.GetValueOrDefault(oneBasedLineNumber - 1);
+    private static void SortProjections(List<Projection> projections)
+    {
+        projections.Sort((left, right) => left.Start == right.Start ?
+            right.Length.CompareTo(left.Length) : left.Start.CompareTo(right.Start));
+        var count = 0;
+        var end = 0;
+        for (var index = 0; index < projections.Count; index++)
+        {
+            var projection = projections[index];
+            if (projection.Start < end)
+                continue;
+            projections[count++] = projection;
+            end = projection.End;
+        }
+        projections.RemoveRange(count, projections.Count - count);
+    }
 
     private MarkdownLine Line(int index)
     {
@@ -166,7 +192,10 @@ public sealed class MarkdownLayout
         {
             if (last > first)
             {
-                var startOfRule = _ends[last] - heading.HeaderCharCount;
+                var endOfRule = _ends[last];
+                while (endOfRule > _starts[last] && char.IsWhiteSpace(_source[endOfRule - 1]))
+                    endOfRule--;
+                var startOfRule = Math.Max(_starts[last], endOfRule - heading.HeaderCharCount);
                 while (startOfRule > _starts[last] && char.IsWhiteSpace(_source[startOfRule - 1]))
                     startOfRule--;
                 Project(startOfRule, _ends[last], ProjectionKind.Hidden);
@@ -232,7 +261,7 @@ public sealed class MarkdownLayout
         {
             var line = sourceLines.Lines[i];
             code.Append(line.Slice.AsSpan());
-            if (i < sourceLines.Count - 1)
+            if (i < sourceLines.Count - 1 && line.Line + 1 < _starts.Length)
                 code.Append(_source.AsSpan(_ends[line.Line], _starts[line.Line + 1] - _ends[line.Line]));
         }
 
@@ -284,17 +313,6 @@ public sealed class MarkdownLayout
         if (rows.Length == 0)
             return;
 
-        var separator = rows[0].Line + 1;
-        if (separator <= LineIndex(table.Span.End))
-        {
-            var line = Line(separator);
-            line.IsTableSeparator = true;
-            var first = _starts[separator];
-            while (first < _ends[separator] && _source[first] is ' ' or '\t' or '>')
-                first++;
-            Project(first, _ends[separator], ProjectionKind.Hidden);
-        }
-
         var pipesByRow = new int[rows.Length][];
         var widths = new int[table.ColumnDefinitions.Count];
         for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
@@ -306,12 +324,25 @@ public sealed class MarkdownLayout
             var pipes = TablePipes(line.Source);
             pipesByRow[rowIndex] = pipes;
             var (_, firstColumn, start) = TableStart(line.Source, pipes);
-            for (var i = firstColumn; i < pipes.Length && i - firstColumn < widths.Length; i++)
+            for (var i = firstColumn; i <= pipes.Length && i - firstColumn < widths.Length; i++)
             {
                 var column = i - firstColumn;
-                widths[column] = Math.Max(widths[column], DisplayWidth(line.Source.AsSpan(start, pipes[i] - start).Trim()));
-                start = pipes[i] + 1;
+                var end = i < pipes.Length ? pipes[i] : line.Source.Length;
+                widths[column] = Math.Max(widths[column], DisplayWidth(line.Source.AsSpan(start, end - start).Trim()));
+                start = end + 1;
             }
+        }
+
+        var separator = rows[0].Line + 1;
+        if (separator <= LineIndex(table.Span.End))
+        {
+            var line = Line(separator);
+            line.IsTableSeparator = true;
+            line.TableSeparatorColumns = widths.Sum(width => Math.Min(width, 100) + 3) + 1;
+            var first = _starts[separator];
+            while (first < _ends[separator] && _source[first] is ' ' or '\t' or '>')
+                first++;
+            Project(first, _ends[separator], ProjectionKind.Hidden);
         }
 
         for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
@@ -400,11 +431,11 @@ public sealed class MarkdownLayout
                     return;
                 }
                 break;
-            case LinkInline { FirstChild: { } first, LastChild: { } last }:
+            case LinkInline { FirstChild: { } first, LastChild: { } last } linked:
                 Style(first.Span.Start, last.Span.End + 1, InlineStyle.Link);
                 Project(start, first.Span.Start, ProjectionKind.Hidden);
                 Project(last.Span.End + 1, end, ProjectionKind.Hidden);
-                AddLink(first.Span.Start, last.Span.End + 1, ((LinkInline)inline).Url);
+                AddLink(first.Span.Start, last.Span.End + 1, linked.Url);
                 break;
             case AutolinkInline autoLink:
                 Style(start + 1, end - 1, InlineStyle.Link);
@@ -454,9 +485,6 @@ public sealed class MarkdownLayout
         if (end > _ends[index])
             return;
 
-        var projection = new Projection(start - _starts[index], end - start, kind, text, target);
-        var projections = Line(index).Projections;
-        if (!projections.Any(p => p.Start < projection.End && p.End > projection.Start))
-            projections.Add(projection);
+        Line(index).Projections.Add(new Projection(start - _starts[index], end - start, kind, text, target));
     }
 }

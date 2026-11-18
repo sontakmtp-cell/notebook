@@ -129,6 +129,12 @@ public sealed class MarkdownPresentation : IDisposable
             if (!_disposed && ReferenceEquals(tab, _tab) && ReferenceEquals(snapshot.Version, tab.Document.Version))
                 Publish(layout, snapshot.Version!);
         }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            System.Diagnostics.Trace.TraceWarning("Markdown rendering failed: {0}", ex);
+            if (!_disposed && ReferenceEquals(tab, _tab) && ReferenceEquals(snapshot.Version, tab.Document.Version))
+                Publish(new MarkdownLayout([]), snapshot.Version!);
+        }
         finally
         {
             _parsing = false;
@@ -337,7 +343,11 @@ public sealed class MarkdownPresentation : IDisposable
                     drawingContext.DrawRectangle(fill, null, new Rect(0, y, width, height));
 
                 if ((layout.IsRule || layout.IsTableSeparator) && !presenter.IsEditing(line) && width > 24)
-                    drawingContext.DrawRectangle(border, null, new Rect(5, y + height / 2, width - 24, 1));
+                {
+                    var length = layout.IsTableSeparator ? Math.Min(width - 24,
+                        layout.TableSeparatorColumns * view.WideSpaceWidth * 1.15) : width - 24;
+                    drawingContext.DrawRectangle(border, null, new Rect(5, y + height / 2, length, 1));
+                }
             }
         }
     }

@@ -50,22 +50,22 @@ public partial class MainWindow
     private async void MinifyJsonClick(object sender, RoutedEventArgs e) => await RunJsonActionAsync(false);
     private async void ValidateJsonClick(object sender, RoutedEventArgs e) => await RunJsonActionAsync(null);
 
-    private async Task RunJsonActionAsync(bool? indented)
+    internal async Task RunJsonActionAsync(bool? indented)
     {
         if (Editor.IsReadOnly || _active is not { Format: FileFormat.Json } tab)
             return;
 
         var snapshot = tab.Document.CreateSnapshot();
         var eol = TextUtilities.GetNewLineFromDocument(tab.Document, 1);
-        var source = snapshot.Text;
         try
         {
-            var result = await Task.Run(() =>
+            var (source, result) = await Task.Run(() =>
             {
+                var text = snapshot.Text;
                 if (indented is { } flag)
-                    return JsonEditing.Format(source, flag, eol);
-                using var parsed = JsonDocument.Parse(source);
-                return source;
+                    return (text, JsonEditing.Format(text, flag, eol));
+                using var parsed = JsonDocument.Parse(text);
+                return (text, text);
             });
 
             if (!ReferenceEquals(_active, tab) || !ReferenceEquals(snapshot.Version, tab.Document.Version))

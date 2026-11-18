@@ -11,8 +11,9 @@ var first = new EditorTab("One");
 var second = new EditorTab("Two");
 first.Document.Insert(0, "Tiếng Việt · 中文 · 😀");
 Assert(first.IsDirty && !second.IsDirty && second.Document.TextLength == 0, "Independent documents");
+Assert(first.CharacterCount == first.Document.TextLength - 1, "An emoji counts as one character");
 first.Document.UndoStack.Undo();
-Assert(!first.IsDirty && first.Document.TextLength == 0, "Undo returns to saved state");
+Assert(!first.IsDirty && first.Document.TextLength == 0 && first.CharacterCount == 0, "Undo returns to saved state");
 first.Document.UndoStack.Redo();
 Assert(first.IsDirty && first.Document.Text.Contains("Tiếng Việt"), "Redo restores Unicode text");
 first.Document.UndoStack.MarkAsOriginalFile();
@@ -55,7 +56,10 @@ finally
 
 const string json = """{"chữ":"Tiếng Việt","số":1.20e-10,"items":[true,{"ok":null}]}""";
 var formatted = JsonEditing.Format(json, true, "\r\n");
-Assert(formatted.Contains("\r\n  \"chữ\"") && JsonEditing.Format(formatted, false, "\n") == json,
+Assert(formatted.StartsWith("{\r\n  \"chữ\"", StringComparison.Ordinal) &&
+    !formatted.Contains("\r\r\n", StringComparison.Ordinal) &&
+    !JsonEditing.Format(json, true, "\n").Contains('\r') &&
+    JsonEditing.Format(formatted, false, "\n") == json,
     "JSON format / minify retains values and original numeric lexemes");
 try
 {
@@ -78,7 +82,7 @@ foreach (var dark in new[] { true, false })
 Console.WriteLine("[PASS] JSON format / minify, validation, indentation and both color palettes");
 MarkdownTests.Run();
 await RecoveryTests.RunAsync();
-await EditorWindowTests.RunAsync();
+await EditorWindowTests.RunAsync(args.Contains("--clipboard", StringComparer.Ordinal));
 
 static void Assert(bool condition, string description)
 {

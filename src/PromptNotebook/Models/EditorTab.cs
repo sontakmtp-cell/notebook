@@ -14,17 +14,26 @@ public sealed class EditorTab : ObservableObject
 
     public EditorTab(string name, FileFormat format = FileFormat.Txt, string? path = null,
         string text = "", TextEncoding encoding = TextEncoding.Utf8)
+        : this(name, format, path, new TextDocument(text), encoding, CountCharacters(text))
+    {
+    }
+
+    internal EditorTab(string name, FileFormat format, string? path, TextDocument document,
+        TextEncoding encoding, int characterCount)
     {
         _untitledName = name;
         _path = path;
         _format = format;
         Encoding = encoding;
-        Document = new TextDocument(text);
+        Document = document;
+        CharacterCount = characterCount;
+        Document.Changing += CountEdit;
         Document.UndoStack.MarkAsOriginalFile();
         Document.UndoStack.PropertyChanged += (_, _) => IsDirty = !Document.UndoStack.IsOriginalFile;
     }
 
     public TextDocument Document { get; }
+    public int CharacterCount { get; private set; }
     public string Name => _path is null ? _untitledName + Format.Extension() : Path.GetFileName(_path);
     public string ToolTip => _path ?? Name;
     public string? FilePath => _path;
@@ -58,4 +67,29 @@ public sealed class EditorTab : ObservableObject
     public int SelectionEnd { get; set; }
     public double ScrollX { get; set; }
     public double ScrollY { get; set; }
+
+    internal static int CountCharacters(ReadOnlySpan<char> text) =>
+        text.Length - CountSurrogatePairs(text, '\0', '\0');
+
+    private void CountEdit(object? sender, DocumentChangeEventArgs e)
+    {
+        var changeEnd = e.Offset + e.RemovalLength;
+        var before = e.Offset > 0 ? Document.GetCharAt(e.Offset - 1) : '\0';
+        var after = changeEnd < Document.TextLength ? Document.GetCharAt(changeEnd) : '\0';
+        var removedPairs = CountSurrogatePairs(e.RemovedText.Text, before, after);
+        var insertedPairs = CountSurrogatePairs(e.InsertedText.Text, before, after);
+        CharacterCount += e.InsertionLength - e.RemovalLength + removedPairs - insertedPairs;
+    }
+
+    private static int CountSurrogatePairs(ReadOnlySpan<char> text, char before, char after)
+    {
+        var count = 0;
+        foreach (var character in text)
+        {
+            if (char.IsHighSurrogate(before) && char.IsLowSurrogate(character))
+                count++;
+            before = character;
+        }
+        return count + (char.IsHighSurrogate(before) && char.IsLowSurrogate(after) ? 1 : 0);
+    }
 }

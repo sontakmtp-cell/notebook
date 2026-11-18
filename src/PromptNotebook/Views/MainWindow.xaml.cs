@@ -110,7 +110,7 @@ public partial class MainWindow : Window
 
         var caret = Editor.TextArea.Caret;
         PositionStatus.Text = $"Dòng {caret.Line}, Cột {caret.Column}";
-        CountStatus.Text = $"{tab.Document.LineCount:N0} dòng · {tab.Document.TextLength:N0} ký tự";
+        CountStatus.Text = $"{tab.Document.LineCount:N0} dòng · {tab.CharacterCount:N0} ký tự";
         EncodingStatus.Text = tab.Encoding.Label();
         KindStatus.Text = tab.Format.Label();
         SaveStatus.Text = tab.IsDirty ? DirtyStatus(tab) : tab.FilePath is null ? "Tệp mới" : "Đã lưu";

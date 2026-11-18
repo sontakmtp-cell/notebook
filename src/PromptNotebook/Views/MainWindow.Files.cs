@@ -91,18 +91,21 @@ public partial class MainWindow
             return;
         }
 
-        var (file, stamp) = await Task.Run(async () =>
+        var (document, encoding, characters, stamp) = await Task.Run(async () =>
         {
             var before = FileStamp.Read(path);
             var loaded = await TextFiles.ReadAsync(path).ConfigureAwait(false);
             var after = FileStamp.Read(path);
             if (after is null || before != after)
                 throw new IOException("Tệp thay đổi trong lúc đang mở. Hãy thử mở lại.");
-            return (loaded, after.Value);
+            var textDocument = new TextDocument(loaded.Text);
+            textDocument.SetOwnerThread(null);
+            return (textDocument, loaded.Encoding, EditorTab.CountCharacters(loaded.Text), after.Value);
         });
         var placeholder = _tabs.Count == 1 && _active is { FilePath: null, IsDirty: false, Format: FileFormat.Txt } current &&
             current.Document.TextLength == 0 ? current : null;
-        AddTab(new EditorTab(Path.GetFileNameWithoutExtension(path), format, path, file.Text, file.Encoding)
+        document.SetOwnerThread(Thread.CurrentThread);
+        AddTab(new EditorTab(Path.GetFileNameWithoutExtension(path), format, path, document, encoding, characters)
         {
             SavedStamp = stamp
         });

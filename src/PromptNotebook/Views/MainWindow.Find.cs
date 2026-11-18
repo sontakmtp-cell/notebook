@@ -34,28 +34,21 @@ public partial class MainWindow
         Editor.Focus();
     }
 
-    private void FindText(bool backwards)
+    private async void FindText(bool backwards)
     {
         var query = FindQuery.Text;
-        if (query.Length == 0)
+        if (query.Length == 0 || _active is not { } tab)
             return;
 
-        var text = Editor.Text;
         var offset = Editor.SelectionLength > 0 ? Editor.SelectionStart : Editor.CaretOffset;
-        int match;
-        if (backwards)
-        {
-            match = text.AsSpan(0, offset).LastIndexOf(query, StringComparison.OrdinalIgnoreCase);
-            if (match < 0)
-                match = text.LastIndexOf(query, StringComparison.OrdinalIgnoreCase);
-        }
-        else
-        {
-            var start = offset + Editor.SelectionLength;
-            match = text.IndexOf(query, start, StringComparison.OrdinalIgnoreCase);
-            if (match < 0)
-                match = text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
-        }
+        var start = backwards ? offset : offset + Editor.SelectionLength;
+        var snapshot = tab.Document.CreateSnapshot();
+        var match = snapshot.TextLength >= 256_000
+            ? await Task.Run(() => IndexOf(snapshot.Text, query, start, backwards))
+            : IndexOf(snapshot.Text, query, start, backwards);
+        if (!ReferenceEquals(_active, tab) || !ReferenceEquals(snapshot.Version, tab.Document.Version) ||
+            !string.Equals(query, FindQuery.Text, StringComparison.Ordinal))
+            return;
 
         FindMessage.Text = match < 0 ? "Không tìm thấy" : "";
         if (match < 0)
@@ -63,9 +56,20 @@ public partial class MainWindow
             FindBar.Visibility = Visibility.Visible;
             return;
         }
-
         Editor.CaretOffset = match + query.Length;
         Editor.Select(match, query.Length);
         Editor.TextArea.Caret.BringCaretToView();
+    }
+
+    private static int IndexOf(string text, string query, int offset, bool backwards)
+    {
+        const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+        if (backwards)
+        {
+            var previous = text.AsSpan(0, offset).LastIndexOf(query, comparison);
+            return previous >= 0 ? previous : text.LastIndexOf(query, comparison);
+        }
+        var next = text.IndexOf(query, offset, comparison);
+        return next >= 0 ? next : text.IndexOf(query, comparison);
     }
 }

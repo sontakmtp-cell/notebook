@@ -20,7 +20,8 @@ public static class JsonEditing
             document.RootElement.WriteTo(writer);
         }
 
-        var result = Encoding.UTF8.GetString(stream.GetBuffer(), 0, checked((int)stream.Length));
+        var result = Encoding.UTF8.GetString(stream.GetBuffer(), 0, checked((int)stream.Length))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
         return newLine == "\n" ? result : result.Replace("\n", newLine, StringComparison.Ordinal);
     }
 }
