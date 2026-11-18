@@ -145,6 +145,7 @@ public sealed class MarkdownPresentation : IDisposable
 
     private void Publish(MarkdownLayout layout, ITextSourceVersion version)
     {
+        var viewport = EditorViewport.Capture(_view);
         var changed = new List<VisualLine>();
         foreach (var visual in VisibleLines())
         {
@@ -160,6 +161,7 @@ public sealed class MarkdownPresentation : IDisposable
         _colorizer.ResetFences();
         foreach (var line in changed)
             _view.Redraw(line);
+        viewport.Restore(_view);
         _view.InvalidateLayer(KnownLayer.Background);
     }
 
@@ -203,8 +205,12 @@ public sealed class MarkdownPresentation : IDisposable
         var redraw = VisibleLines().Where(visual =>
             LayoutFor(visual.FirstDocumentLine)?.Projections.Any(
                 projection => projection.Kind == ProjectionKind.Image && projection.Target == target) == true).ToArray();
+        if (redraw.Length == 0)
+            return;
+        var viewport = EditorViewport.Capture(_view);
         foreach (var visual in redraw)
             _view.Redraw(visual);
+        viewport.Restore(_view);
     }
 
     private VisualLineElement ProjectImage(Projection projection)

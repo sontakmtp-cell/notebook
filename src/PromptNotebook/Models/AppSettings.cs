@@ -14,4 +14,6 @@ public sealed class AppSettings
 
 public sealed record EditorSession(SessionTab[] Tabs, int SelectedIndex, int UntitledCount);
 
-public sealed record SessionTab(string? FilePath, string Name, FileFormat Format);
+public sealed record SessionTab(string? FilePath, string Name, FileFormat Format, TabViewState? View = null);
+
+public sealed record TabViewState(int CaretLine, int CaretColumn, EditorViewport Viewport);

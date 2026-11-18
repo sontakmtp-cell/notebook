@@ -83,16 +83,7 @@ public partial class MainWindow : Window
             return;
 
         if (_active is { } previous)
-        {
-            previous.Caret = Editor.CaretOffset;
-            var selection = Editor.TextArea.Selection;
-            previous.SelectionAnchor = selection.IsEmpty ? previous.Caret :
-                Editor.Document.GetOffset(selection.StartPosition.Location);
-            previous.SelectionEnd = selection.IsEmpty ? previous.Caret :
-                Editor.Document.GetOffset(selection.EndPosition.Location);
-            previous.ScrollX = Editor.HorizontalOffset;
-            previous.ScrollY = Editor.VerticalOffset;
-        }
+            RememberView(previous);
 
         _active = tab;
         Editor.Document = tab.Document;
@@ -104,9 +95,17 @@ public partial class MainWindow : Window
         var end = Math.Clamp(tab.SelectionEnd, 0, tab.Document.TextLength);
         Editor.TextArea.Selection = Selection.Create(Editor.TextArea, anchor, end);
         Editor.UpdateLayout();
-        Editor.ScrollToHorizontalOffset(tab.ScrollX);
-        Editor.ScrollToVerticalOffset(tab.ScrollY);
+        tab.Viewport.Restore(Editor.TextArea.TextView);
         UpdateStatus();
+    }
+
+    private void RememberView(EditorTab tab)
+    {
+        tab.Caret = Editor.CaretOffset;
+        var selection = Editor.TextArea.Selection;
+        tab.SelectionAnchor = selection.IsEmpty ? tab.Caret : tab.Document.GetOffset(selection.StartPosition.Location);
+        tab.SelectionEnd = selection.IsEmpty ? tab.Caret : tab.Document.GetOffset(selection.EndPosition.Location);
+        tab.Viewport = EditorViewport.Capture(Editor.TextArea.TextView);
     }
 
     private void UpdateStatus()
@@ -331,11 +330,11 @@ public partial class MainWindow : Window
     {
         if (_allowWindowClose)
         {
+            CaptureSession();
             _markdown.Dispose();
             _settings.WindowWidth = RestoreBounds.Width;
             _settings.WindowHeight = RestoreBounds.Height;
             _settings.IsMaximized = WindowState == WindowState.Maximized;
-            CaptureSession();
             _settingsService.Save(_settings);
             return;
         }

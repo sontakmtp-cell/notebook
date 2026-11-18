@@ -4,7 +4,7 @@ Notebook là trình soạn thảo Windows cho tệp **TXT, JSON và Markdown**, 
 
 Khi mở tệp từ File Explorer, Notebook dùng lại cửa sổ đang chạy. Nếu tệp đã có tab, Notebook chuyển sang tab đó.
 
-Khi đóng cửa sổ, Notebook ghi nhớ thứ tự tab và tab đang dùng. Mở lại từ biểu tượng ứng dụng sẽ trở về tab đó. Khi mở bằng một tệp từ File Explorer, Notebook khôi phục các tab rồi chuyển tới tệp vừa chọn.
+Khi đóng cửa sổ, Notebook ghi nhớ thứ tự tab, tab đang dùng, vị trí con trỏ và chỗ cuộn của từng tab. Mở lại từ biểu tượng ứng dụng sẽ trở về tab đó. Khi mở bằng một tệp từ File Explorer, Notebook khôi phục các tab rồi chuyển tới tệp vừa chọn.
 
 ## Chạy ứng dụng
 

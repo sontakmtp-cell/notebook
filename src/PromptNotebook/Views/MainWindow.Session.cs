@@ -7,11 +7,19 @@ public partial class MainWindow
 {
     private void CaptureSession()
     {
+        if (_active is { } active)
+            RememberView(active);
         _settings.LastSession = _tabs.Count == 1 && EmptyPlaceholder is not null ? null :
             new EditorSession(
-                _tabs.Select(tab => new SessionTab(tab.FilePath, tab.Name, tab.Format)).ToArray(),
+                _tabs.Select(CaptureTab).ToArray(),
                 Tabs.SelectedIndex,
                 _untitledCount);
+    }
+
+    private static SessionTab CaptureTab(EditorTab tab)
+    {
+        var caret = tab.Document.GetLocation(Math.Clamp(tab.Caret, 0, tab.Document.TextLength));
+        return new SessionTab(tab.FilePath, tab.Name, tab.Format, new TabViewState(caret.Line, caret.Column, tab.Viewport));
     }
 
     private async Task<List<string>> RestoreSessionAsync()
@@ -45,6 +53,16 @@ public partial class MainWindow
                 var tab = new EditorTab(Path.GetFileNameWithoutExtension(saved.Name), saved.Format);
                 AddTab(tab, select: false);
                 restored[index] = tab;
+            }
+
+            if (restored[index] is { } tabToRestore && saved.View is { } view)
+            {
+                var document = tabToRestore.Document;
+                var line = document.GetLineByNumber(Math.Clamp(view.CaretLine, 1, document.LineCount));
+                var column = Math.Clamp(view.CaretColumn, 1, line.Length + 1);
+                tabToRestore.Caret = line.Offset + column - 1;
+                tabToRestore.SelectionAnchor = tabToRestore.SelectionEnd = tabToRestore.Caret;
+                tabToRestore.Viewport = view.Viewport;
             }
         }
 

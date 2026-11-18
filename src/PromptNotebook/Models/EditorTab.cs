@@ -65,8 +65,7 @@ public sealed class EditorTab : ObservableObject
     public int Caret { get; set; }
     public int SelectionAnchor { get; set; }
     public int SelectionEnd { get; set; }
-    public double ScrollX { get; set; }
-    public double ScrollY { get; set; }
+    internal EditorViewport Viewport { get; set; }
 
     internal static int CountCharacters(ReadOnlySpan<char> text) =>
         text.Length - CountSurrogatePairs(text, '\0', '\0');

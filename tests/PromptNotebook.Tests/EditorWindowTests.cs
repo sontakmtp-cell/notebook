@@ -173,7 +173,8 @@ internal static class EditorWindowTests
         Assert(settings.RecentFiles.Count == 2 && settings.RecentFiles[0] == json, "Recent files persist in JSON settings");
 
         var extra = Path.Combine(folder, "tệp mở thêm.txt");
-        await File.WriteAllTextAsync(extra, "Tệp từ lần khởi chạy kế tiếp.");
+        var longLine = new string('x', 250);
+        await File.WriteAllLinesAsync(extra, Enumerable.Range(1, 200).Select(number => $"{number:D3} {longLine}"));
         var existingMarkdown = tabs.Items.OfType<EditorTab>().Single(tab => tab.FilePath == markdown);
         const string unsaved = "Thay đổi chưa lưu.";
         existingMarkdown.Document.Insert(existingMarkdown.Document.TextLength, unsaved);
@@ -198,19 +199,41 @@ internal static class EditorWindowTests
     {
         var store = new SettingsService(Path.Combine(folder, "settings.json"));
         var tabs = (ListBox)window.FindName("Tabs");
+        var editor = (TextEditor)window.FindName("Editor");
+        var wrap = (MenuItem)window.FindName("WrapItem");
+        wrap.IsChecked = false;
+        wrap.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        var largeMarkdown = Path.Combine(folder, "large.md");
+        SelectFileTab(tabs, largeMarkdown);
+        var markdownPosition = await MoveViewportAsync(window, editor, caretLine: 108, topLine: 601, horizontal: 0);
+        SelectFileTab(tabs, extra);
+        var textPosition = await MoveViewportAsync(window, editor, caretLine: 126, topLine: 110, horizontal: 180);
+
         ((Button)window.FindName("NewFileButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        tabs.SelectedItem = tabs.Items.OfType<EditorTab>().Single(tab => tab.FilePath == markdown);
+        SelectFileTab(tabs, markdown);
+        var activeCaret = editor.Document.GetLineByNumber(4).Offset + 1;
+        editor.CaretOffset = activeCaret;
         var order = tabs.Items.OfType<EditorTab>().Select(tab => (tab.FilePath, tab.Name)).ToArray();
         var recent = store.Load().RecentFiles;
         await CloseWindowAsync(window);
 
         window = await ReopenWindowAsync(store);
         tabs = (ListBox)window.FindName("Tabs");
-        var editor = (TextEditor)window.FindName("Editor");
+        editor = (TextEditor)window.FindName("Editor");
         Assert(tabs.Items.OfType<EditorTab>().Select(tab => (tab.FilePath, tab.Name)).SequenceEqual(order),
             "Restart restores tab order and the blank untitled tab");
         Assert((tabs.SelectedItem as EditorTab)?.FilePath == markdown && editor.Text == expectedMarkdown,
             "Restart selects the previous active tab, even when it is not the last tab");
+        Assert(editor.CaretOffset == activeCaret, "Restart restores the active tab's caret");
+        SelectFileTab(tabs, extra);
+        await CheckViewportAsync(window, editor, textPosition, "Restart restores the TXT caret and both scroll axes");
+        SelectFileTab(tabs, largeMarkdown);
+        await CheckViewportAsync(window, editor, markdownPosition, "Restart restores the Markdown caret and top line");
+        var view = editor.TextArea.TextView;
+        await ObserveAsync(window, () => view.GetVisualLine(601)?.Elements.Any(e => e.DocumentLength > e.VisualLength) == true,
+            "Markdown formats the restored viewport");
+        await CheckViewportAsync(window, editor, markdownPosition, "Markdown formatting leaves the restored view anchored");
+        SelectFileTab(tabs, markdown);
         Assert(store.Load().RecentFiles.SequenceEqual(recent), "Restoring tabs does not reorder Recent Files");
         await CloseWindowAsync(window);
 
@@ -229,6 +252,34 @@ internal static class EditorWindowTests
             "An explicit launch file takes precedence without duplicating a restored tab");
         await CloseWindowAsync(window);
         Console.WriteLine("[PASS] Closing and reopening restores tab order, active tab and blank tabs, with fallback for missing files");
+        Console.WriteLine("[PASS] Restart restores distinct caret and scroll positions in TXT and Markdown");
+    }
+
+    private static void SelectFileTab(ListBox tabs, string path) =>
+        tabs.SelectedItem = tabs.Items.OfType<EditorTab>().Single(tab => tab.FilePath == path);
+
+    private static async Task<(int Caret, int Top, double Clip, double X)> MoveViewportAsync(
+        Window window, TextEditor editor, int caretLine, int topLine, double horizontal)
+    {
+        var view = editor.TextArea.TextView;
+        editor.CaretOffset = editor.Document.GetLineByNumber(caretLine).Offset + 1;
+        const double clip = 3;
+        editor.ScrollToVerticalOffset(view.GetVisualTopByDocumentLine(topLine) + clip);
+        editor.ScrollToHorizontalOffset(horizontal);
+        var position = (editor.CaretOffset, topLine, clip, horizontal);
+        await CheckViewportAsync(window, editor, position, "Fixture scrolls to its requested position");
+        return position;
+    }
+
+    private static Task CheckViewportAsync(Window window, TextEditor editor,
+        (int Caret, int Top, double Clip, double X) expected, string label)
+    {
+        var view = editor.TextArea.TextView;
+        return ObserveAsync(window, () =>
+            editor.CaretOffset == expected.Caret &&
+            view.GetDocumentLineByVisualTop(view.VerticalOffset).LineNumber == expected.Top &&
+            Math.Abs(view.VerticalOffset - view.GetVisualTopByDocumentLine(expected.Top) - expected.Clip) < 1 &&
+            Math.Abs(view.ScrollOffset.X - expected.X) < 1, label);
     }
 
     private static async Task<MainWindow> ReopenWindowAsync(SettingsService store, params string[] launchPaths)
