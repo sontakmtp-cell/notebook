@@ -24,8 +24,7 @@ public partial class MainWindow
             if (recovered.Count == 0)
                 return;
 
-            var placeholder = _tabs.Count == 1 && _active is { FilePath: null, IsDirty: false, Format: FileFormat.Txt } first &&
-                first.Document.TextLength == 0 ? first : null;
+            var placeholder = _tabs.Count == 1 ? EmptyPlaceholder : null;
             foreach (var draft in recovered)
             {
                 var tab = new EditorTab($"Khôi phục - {Path.GetFileNameWithoutExtension(draft.Name)}",

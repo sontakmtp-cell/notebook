@@ -52,14 +52,20 @@ public partial class MainWindow : Window
         Editor.TextArea.TextEntering += AlignJsonClosingBracket;
         Tabs.ItemsSource = _tabs;
         ApplyEditorSettings();
-        AddNew();
+        _placeholder = AddNew();
     }
 
-    private void AddTab(EditorTab tab)
+    private void AddTab(EditorTab tab, bool select = true)
     {
         tab.PropertyChanged += TabPropertyChanged;
         WatchTab(tab);
         _tabs.Add(tab);
+        if (select)
+            SelectTab(tab);
+    }
+
+    private void SelectTab(EditorTab tab)
+    {
         Tabs.SelectedItem = tab;
         Tabs.ScrollIntoView(tab);
         Editor.Focus();
@@ -214,10 +220,7 @@ public partial class MainWindow : Window
     {
         if (_tabs.Count == 0)
             return;
-        var tab = _tabs[(Tabs.SelectedIndex + direction + _tabs.Count) % _tabs.Count];
-        Tabs.SelectedItem = tab;
-        Tabs.ScrollIntoView(tab);
-        Editor.Focus();
+        SelectTab(_tabs[(Tabs.SelectedIndex + direction + _tabs.Count) % _tabs.Count]);
     }
 
     private void TabsMouseWheel(object sender, MouseWheelEventArgs e)
@@ -248,6 +251,8 @@ public partial class MainWindow : Window
         tab.PropertyChanged -= TabPropertyChanged;
         UnwatchTab(tab);
         _tabs.Remove(tab);
+        if (ReferenceEquals(_placeholder, tab))
+            _placeholder = null;
     }
 
     private void UndoClick(object sender, RoutedEventArgs e)
@@ -330,6 +335,7 @@ public partial class MainWindow : Window
             _settings.WindowWidth = RestoreBounds.Width;
             _settings.WindowHeight = RestoreBounds.Height;
             _settings.IsMaximized = WindowState == WindowState.Maximized;
+            CaptureSession();
             _settingsService.Save(_settings);
             return;
         }

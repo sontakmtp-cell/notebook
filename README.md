@@ -4,6 +4,8 @@ Notebook là trình soạn thảo Windows cho tệp **TXT, JSON và Markdown**, 
 
 Khi mở tệp từ File Explorer, Notebook dùng lại cửa sổ đang chạy. Nếu tệp đã có tab, Notebook chuyển sang tab đó.
 
+Khi đóng cửa sổ, Notebook ghi nhớ thứ tự tab và tab đang dùng. Mở lại từ biểu tượng ứng dụng sẽ trở về tab đó. Khi mở bằng một tệp từ File Explorer, Notebook khôi phục các tab rồi chuyển tới tệp vừa chọn.
+
 ## Chạy ứng dụng
 
 Mở `PromptNotebook.exe` trên Windows x64. Máy cần **.NET 8 Desktop Runtime x64**. Các tệp được mở từ ổ đĩa và lưu lại theo mã hóa hiện có. Nếu tạo tệp mới, Notebook dùng UTF-8.

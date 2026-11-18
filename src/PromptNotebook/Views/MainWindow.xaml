@@ -61,7 +61,7 @@
                             ToolTip="Kiểm tra cú pháp JSON" />
                 </StackPanel>
                 <StackPanel x:Name="FileTools" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolButton}" ToolTip="Tệp mới (Ctrl+N)" Click="NewClick">
+                    <Button x:Name="NewFileButton" Style="{StaticResource ToolButton}" ToolTip="Tệp mới (Ctrl+N)" Click="NewClick">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" Margin="0,0,7,0" />
                             <TextBlock Text="Mới" VerticalAlignment="Center" />

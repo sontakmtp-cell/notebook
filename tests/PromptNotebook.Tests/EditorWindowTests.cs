@@ -189,9 +189,61 @@ internal static class EditorWindowTests
         editor.Undo();
 
         await ExerciseLargeMarkdownAsync(window, folder, editor, view);
+        await ExerciseSessionRestoreAsync(window, folder, markdown, json, extra, markdownEdit);
+        Console.WriteLine("[PASS] Real WPF window, tabs, live Markdown, local images, themes, source editing and selection");
+    }
+
+    private static async Task ExerciseSessionRestoreAsync(MainWindow window, string folder,
+        string markdown, string json, string extra, string expectedMarkdown)
+    {
+        var store = new SettingsService(Path.Combine(folder, "settings.json"));
+        var tabs = (ListBox)window.FindName("Tabs");
+        ((Button)window.FindName("NewFileButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        tabs.SelectedItem = tabs.Items.OfType<EditorTab>().Single(tab => tab.FilePath == markdown);
+        var order = tabs.Items.OfType<EditorTab>().Select(tab => (tab.FilePath, tab.Name)).ToArray();
+        var recent = store.Load().RecentFiles;
+        await CloseWindowAsync(window);
+
+        window = await ReopenWindowAsync(store);
+        tabs = (ListBox)window.FindName("Tabs");
+        var editor = (TextEditor)window.FindName("Editor");
+        Assert(tabs.Items.OfType<EditorTab>().Select(tab => (tab.FilePath, tab.Name)).SequenceEqual(order),
+            "Restart restores tab order and the blank untitled tab");
+        Assert((tabs.SelectedItem as EditorTab)?.FilePath == markdown && editor.Text == expectedMarkdown,
+            "Restart selects the previous active tab, even when it is not the last tab");
+        Assert(store.Load().RecentFiles.SequenceEqual(recent), "Restoring tabs does not reorder Recent Files");
+        await CloseWindowAsync(window);
+
+        File.Delete(markdown);
+        window = await ReopenWindowAsync(store);
+        tabs = (ListBox)window.FindName("Tabs");
+        Assert(tabs.Items.Count == order.Length - 1 && (tabs.SelectedItem as EditorTab)?.FilePath == json,
+            "Restart skips a missing selected file and selects the next available tab");
+        var notice = (TextBlock)window.FindName("NoticeText");
+        Assert(notice.Text.Contains(Path.GetFileName(markdown), StringComparison.Ordinal), "Missing file is reported");
+        await CloseWindowAsync(window);
+
+        window = await ReopenWindowAsync(store, extra);
+        tabs = (ListBox)window.FindName("Tabs");
+        Assert(tabs.Items.Count == order.Length - 1 && (tabs.SelectedItem as EditorTab)?.FilePath == extra,
+            "An explicit launch file takes precedence without duplicating a restored tab");
+        await CloseWindowAsync(window);
+        Console.WriteLine("[PASS] Closing and reopening restores tab order, active tab and blank tabs, with fallback for missing files");
+    }
+
+    private static async Task<MainWindow> ReopenWindowAsync(SettingsService store, params string[] launchPaths)
+    {
+        var window = new MainWindow(store, store.Load());
+        Application.Current.MainWindow = window;
+        window.Show();
+        await window.StartAsync(launchPaths);
+        return window;
+    }
+
+    private static async Task CloseWindowAsync(MainWindow window)
+    {
         window.Close();
         await ObserveAsync(window, () => !window.IsVisible, "Clean window closes");
-        Console.WriteLine("[PASS] Real WPF window, tabs, live Markdown, local images, themes, source editing and selection");
     }
 
     private static void ExerciseClipboard(TextEditor editor, Button codeCopy, string source)

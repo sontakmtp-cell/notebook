@@ -13,11 +13,19 @@ public partial class MainWindow
     private const string SaveFilter = "Văn bản (*.txt)|*.txt|JSON (*.json)|*.json|Markdown (*.md)|*.md";
 
     private readonly Queue<string[]> _externalOpens = new();
+    private EditorTab? _placeholder;
     private bool _fileOperation;
     private bool _allowWindowClose;
 
-    private void AddNew(FileFormat format = FileFormat.Txt) =>
-        AddTab(new EditorTab($"Không tên {++_untitledCount}", format));
+    private EditorTab? EmptyPlaceholder =>
+        _placeholder is { FilePath: null, IsDirty: false } tab && tab.Document.TextLength == 0 ? tab : null;
+
+    private EditorTab AddNew(FileFormat format = FileFormat.Txt)
+    {
+        var tab = new EditorTab($"Không tên {++_untitledCount}", format);
+        AddTab(tab);
+        return tab;
+    }
 
     private void NewJsonClick(object sender, RoutedEventArgs e) => AddNew(FileFormat.Json);
     private void NewMarkdownClick(object sender, RoutedEventArgs e) => AddNew(FileFormat.Markdown);
@@ -34,8 +42,9 @@ public partial class MainWindow
 
     internal Task StartAsync(IEnumerable<string> paths) => RunFileOperationAsync(async () =>
     {
+        var errors = await RestoreSessionAsync();
         await RestoreDraftsAsync();
-        await OpenPathsAsync(paths);
+        await OpenPathsAsync(paths, errors);
     });
 
     internal bool QueueExternalOpen(string[] paths)
@@ -77,9 +86,9 @@ public partial class MainWindow
         await OpenFromStartupAsync(paths);
     }
 
-    private async Task OpenPathsAsync(IEnumerable<string> paths)
+    private async Task OpenPathsAsync(IEnumerable<string> paths, List<string>? errors = null)
     {
-        var errors = new List<string>();
+        errors ??= [];
         foreach (var path in paths)
         {
             try
@@ -101,41 +110,41 @@ public partial class MainWindow
         }
     }
 
-    private async Task OpenPathAsync(string path)
+    private async Task<EditorTab> OpenPathAsync(string path, bool restoring = false)
     {
         path = Path.GetFullPath(path);
         var format = FileFormats.FromPath(path);
-        var alreadyOpen = FindTab(path);
-        if (alreadyOpen is not null)
+        var tab = FindTab(path);
+        if (tab is null)
         {
-            Tabs.SelectedItem = alreadyOpen;
-            Tabs.ScrollIntoView(alreadyOpen);
-            Editor.Focus();
-            RememberFile(path);
-            return;
+            var (document, encoding, characters, stamp) = await Task.Run(async () =>
+            {
+                var before = FileStamp.Read(path);
+                var loaded = await TextFiles.ReadAsync(path).ConfigureAwait(false);
+                var after = FileStamp.Read(path);
+                if (after is null || before != after)
+                    throw new IOException("Tệp thay đổi trong lúc đang mở. Hãy thử mở lại.");
+                var textDocument = new TextDocument(loaded.Text);
+                textDocument.SetOwnerThread(null);
+                return (textDocument, loaded.Encoding, EditorTab.CountCharacters(loaded.Text), after.Value);
+            });
+            var placeholder = !restoring && _tabs.Count == 1 ? EmptyPlaceholder : null;
+            document.SetOwnerThread(Thread.CurrentThread);
+            tab = new EditorTab(Path.GetFileNameWithoutExtension(path), format, path, document, encoding, characters)
+            {
+                SavedStamp = stamp
+            };
+            AddTab(tab, select: false);
+            if (placeholder is not null)
+                RemoveTab(placeholder);
         }
 
-        var (document, encoding, characters, stamp) = await Task.Run(async () =>
+        if (!restoring)
         {
-            var before = FileStamp.Read(path);
-            var loaded = await TextFiles.ReadAsync(path).ConfigureAwait(false);
-            var after = FileStamp.Read(path);
-            if (after is null || before != after)
-                throw new IOException("Tệp thay đổi trong lúc đang mở. Hãy thử mở lại.");
-            var textDocument = new TextDocument(loaded.Text);
-            textDocument.SetOwnerThread(null);
-            return (textDocument, loaded.Encoding, EditorTab.CountCharacters(loaded.Text), after.Value);
-        });
-        var placeholder = _tabs.Count == 1 && _active is { FilePath: null, IsDirty: false, Format: FileFormat.Txt } current &&
-            current.Document.TextLength == 0 ? current : null;
-        document.SetOwnerThread(Thread.CurrentThread);
-        AddTab(new EditorTab(Path.GetFileNameWithoutExtension(path), format, path, document, encoding, characters)
-        {
-            SavedStamp = stamp
-        });
-        if (placeholder is not null)
-            RemoveTab(placeholder);
-        RememberFile(path);
+            SelectTab(tab);
+            RememberFile(path);
+        }
+        return tab;
     }
 
     private EditorTab? FindTab(string path) => _tabs.FirstOrDefault(tab =>
@@ -225,7 +234,7 @@ public partial class MainWindow
             {
                 RemoveTab(tab);
                 if (_tabs.Count == 0)
-                    AddNew();
+                    _placeholder = AddNew();
                 await RemoveDraftAsync(tab);
                 Editor.Focus();
             }
