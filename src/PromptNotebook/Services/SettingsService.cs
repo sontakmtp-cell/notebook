@@ -1,87 +1,46 @@
 using System.IO;
-using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using PromptNotebook.Models;
 
 namespace PromptNotebook.Services;
 
-/// <summary>
-/// Đọc và ghi cấu hình ứng dụng (Dark/Light Mode, độ rộng cột, vị trí cửa sổ, cỡ chữ).
-/// </summary>
-public sealed class SettingsService
+public sealed class SettingsService(string? settingsFilePath = null)
 {
-    private readonly string _settingsFilePath;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
-    public SettingsService(string? customSettingsFilePath = null)
-    {
-        _settingsFilePath = customSettingsFilePath ?? AppPaths.SettingsPath;
-    }
+    private readonly string _path = settingsFilePath ?? AppPaths.SettingsPath;
 
     public AppSettings Load()
     {
         try
         {
-            if (!File.Exists(_settingsFilePath))
+            if (File.Exists(_path) && JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) is { } settings)
             {
-                return new AppSettings();
+                settings.EditorFontSize = ValidSize(settings.EditorFontSize, 10, 36, 16);
+                settings.WindowWidth = ValidSize(settings.WindowWidth, 620, 8000, 1080);
+                settings.WindowHeight = ValidSize(settings.WindowHeight, 400, 8000, 720);
+                return settings;
             }
-
-            var json = File.ReadAllText(_settingsFilePath, Encoding.UTF8);
-            var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
-            return Validate(settings ?? new AppSettings());
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new AppSettings();
+            // Settings are optional. A damaged settings file should not prevent startup.
         }
+
+        return new AppSettings();
     }
 
     public void Save(AppSettings settings)
     {
         try
         {
-            var dir = Path.GetDirectoryName(_settingsFilePath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            var json = JsonSerializer.Serialize(Validate(settings), JsonOptions);
-            File.WriteAllText(_settingsFilePath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_path))!);
+            File.WriteAllText(_path, JsonSerializer.Serialize(settings));
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Bỏ qua lỗi ghi cấu hình phụ nếu file bị khóa tạm thời
+            // Keep the editor usable when the settings directory is unavailable.
         }
     }
 
-    private static AppSettings Validate(AppSettings s)
-    {
-        if (s.EditorFontSize < 10 || s.EditorFontSize > 36)
-            s.EditorFontSize = 14.0;
-
-        if (s.EditorViewMode is not ("Edit" or "Split" or "Preview"))
-            s.EditorViewMode = "Split";
-
-        if (s.LeftColumnWidthRatio < 15 || s.LeftColumnWidthRatio > 75)
-            s.LeftColumnWidthRatio = 40.0;
-
-        if (s.LeftColumnPixelWidth < 220 || s.LeftColumnPixelWidth > 1200)
-            s.LeftColumnPixelWidth = 440.0;
-
-        if (s.WindowWidth < 720)
-            s.WindowWidth = 1180.0;
-
-        if (s.WindowHeight < 480)
-            s.WindowHeight = 740.0;
-
-        return s;
-    }
+    private static double ValidSize(double value, double minimum, double maximum, double fallback) =>
+        double.IsFinite(value) && value >= minimum && value <= maximum ? value : fallback;
 }

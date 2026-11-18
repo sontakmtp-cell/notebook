@@ -14,18 +14,13 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>embedded</DebugType>
-    <Version>1.0.0</Version>
-    <Product>Prompt Notebook</Product>
-    <Description>Ứng dụng quản lý, chỉnh sửa và sao chép AI Prompt siêu nhẹ cho Windows</Description>
+    <Version>2.0.0</Version>
+    <Product>Notebook</Product>
+    <Description>Trình soạn thảo TXT, JSON và Markdown cho Windows</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.2" />
-  </ItemGroup>
-
-  <ItemGroup Condition="Exists('..\..\.env')">
-    <Content Include="..\..\.env" Link=".env" CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
   </ItemGroup>
 
 </Project>
