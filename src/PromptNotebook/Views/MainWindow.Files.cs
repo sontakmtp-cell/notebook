@@ -12,6 +12,7 @@ public partial class MainWindow
     private const string OpenFilter = "Tệp được hỗ trợ (*.txt;*.json;*.md)|*.txt;*.json;*.md|" + SaveFilter;
     private const string SaveFilter = "Văn bản (*.txt)|*.txt|JSON (*.json)|*.json|Markdown (*.md)|*.md";
 
+    private readonly Queue<string[]> _externalOpens = new();
     private bool _fileOperation;
     private bool _allowWindowClose;
 
@@ -36,6 +37,29 @@ public partial class MainWindow
         await RestoreDraftsAsync();
         await OpenPathsAsync(paths);
     });
+
+    internal bool QueueExternalOpen(string[] paths)
+    {
+        if (_ending)
+            return false;
+        _externalOpens.Enqueue(paths);
+        _ = Dispatcher.InvokeAsync(ProcessExternalOpen);
+        return true;
+    }
+
+    private void ProcessExternalOpen()
+    {
+        if (_fileOperation || _ending || !_externalOpens.TryDequeue(out var paths))
+            return;
+
+        _ = RunFileOperationAsync(async () =>
+        {
+            if (WindowState == WindowState.Minimized)
+                SystemCommands.RestoreWindow(this);
+            Activate();
+            await OpenPathsAsync(paths);
+        });
+    }
 
     private void FilesDragOver(object sender, DragEventArgs e)
     {
@@ -243,6 +267,8 @@ public partial class MainWindow
         finally
         {
             _fileOperation = false;
+            if (_externalOpens.Count > 0)
+                _ = Dispatcher.InvokeAsync(ProcessExternalOpen);
         }
     }
 

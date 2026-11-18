@@ -172,6 +172,22 @@ internal static class EditorWindowTests
         var settings = new SettingsService(Path.Combine(folder, "settings.json")).Load();
         Assert(settings.RecentFiles.Count == 2 && settings.RecentFiles[0] == json, "Recent files persist in JSON settings");
 
+        var extra = Path.Combine(folder, "tệp mở thêm.txt");
+        await File.WriteAllTextAsync(extra, "Tệp từ lần khởi chạy kế tiếp.");
+        var existingMarkdown = tabs.Items.OfType<EditorTab>().Single(tab => tab.FilePath == markdown);
+        const string unsaved = "Thay đổi chưa lưu.";
+        existingMarkdown.Document.Insert(existingMarkdown.Document.TextLength, unsaved);
+        window.WindowState = WindowState.Minimized;
+        var opening = window.OpenFromStartupAsync([extra]);
+        Assert(window.QueueExternalOpen([json, extra, markdown]), "Accept launch while a file open is in progress");
+        await opening;
+        await ObserveAsync(window, () => (tabs.SelectedItem as EditorTab)?.FilePath == markdown &&
+            window.WindowState != WindowState.Minimized, "Queued launch restores the window and selects its last file");
+        Assert(tabs.Items.Count == 3, "Queued launch reuses tabs for paths that are already open");
+        Assert(existingMarkdown.IsDirty && editor.Text.EndsWith(unsaved, StringComparison.Ordinal),
+            "Opening an existing tab preserves its unsaved edits");
+        editor.Undo();
+
         await ExerciseLargeMarkdownAsync(window, folder, editor, view);
         window.Close();
         await ObserveAsync(window, () => !window.IsVisible, "Clean window closes");

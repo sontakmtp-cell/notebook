@@ -351,6 +351,9 @@ public partial class MainWindow : Window
                     if (!await ConfirmCloseAsync(tab))
                         return;
                 }
+                // A launch acknowledged during a save confirmation still belongs to this window.
+                if (_externalOpens.Count > 0)
+                    return;
                 _ending = true;
                 _draftTimer.Stop();
                 try
