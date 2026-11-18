@@ -76,6 +76,8 @@ foreach (var dark in new[] { true, false })
     Assert(highlighter.HighlightLine(1).Sections.Count >= 7, "JSON token highlighting in both themes");
 }
 Console.WriteLine("[PASS] JSON format / minify, validation, indentation and both color palettes");
+MarkdownTests.Run();
+await EditorWindowTests.RunAsync();
 
 static void Assert(bool condition, string description)
 {

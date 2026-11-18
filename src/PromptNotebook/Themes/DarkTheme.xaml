@@ -11,4 +11,7 @@
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="#A5AEC0" />
     <SolidColorBrush x:Key="AccentBrush" Color="#82D9BE" />
     <SolidColorBrush x:Key="DangerBrush" Color="#FF9BA2" />
+    <SolidColorBrush x:Key="MarkdownCodeBrush" Color="#80343F53" />
+    <SolidColorBrush x:Key="MarkdownQuoteBrush" Color="#30386865" />
+    <SolidColorBrush x:Key="MarkdownTableBrush" Color="#60343F53" />
 </ResourceDictionary>

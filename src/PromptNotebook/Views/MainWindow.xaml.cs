@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Editing;
 using PromptNotebook.Helpers;
+using PromptNotebook.Markdown;
 using PromptNotebook.Models;
 using PromptNotebook.Services;
 
@@ -19,6 +20,7 @@ public partial class MainWindow : Window
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
     private readonly ObservableCollection<EditorTab> _tabs = [];
+    private readonly MarkdownPresentation _markdown;
     private EditorTab? _active;
     private int _untitledCount;
 
@@ -27,6 +29,7 @@ public partial class MainWindow : Window
         _settingsService = settingsService;
         _settings = settings;
         InitializeComponent();
+        _markdown = new MarkdownPresentation(Editor);
         Width = Math.Clamp(settings.WindowWidth, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width));
         Height = Math.Clamp(settings.WindowHeight, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height));
         if (settings.IsMaximized)
@@ -155,6 +158,11 @@ public partial class MainWindow : Window
                     _ = RunJsonActionAsync(true);
                     e.Handled = true;
                     break;
+                case Key.C when _markdown.CodeAtCaret() is { } code:
+                    if (MarkdownPresentation.CopyCode(code))
+                        ShowNotice("Đã sao chép khối code.");
+                    e.Handled = true;
+                    break;
             }
         }
 
@@ -274,6 +282,7 @@ public partial class MainWindow : Window
     {
         if (_allowWindowClose)
         {
+            _markdown.Dispose();
             _settings.WindowWidth = RestoreBounds.Width;
             _settings.WindowHeight = RestoreBounds.Height;
             _settings.IsMaximized = WindowState == WindowState.Maximized;

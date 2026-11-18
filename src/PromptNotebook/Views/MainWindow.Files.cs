@@ -135,9 +135,10 @@ public partial class MainWindow
 
         var snapshot = tab.Document.CreateSnapshot();
         await TextFiles.WriteAsync(path, snapshot.Text, tab.Encoding);
-        var changedFormat = tab.Format != format;
+        var changedPresentation = tab.Format != format ||
+            (format == FileFormat.Markdown && tab.FilePath != path);
         tab.CompleteSave(path, snapshot.Version!);
-        if (changedFormat && ReferenceEquals(_active, tab))
+        if (changedPresentation && ReferenceEquals(_active, tab))
             ApplyFormat();
         return true;
     }

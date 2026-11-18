@@ -4,6 +4,7 @@ using System.Windows.Media;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Indentation;
 using PromptNotebook.Helpers;
+using PromptNotebook.Markdown;
 using PromptNotebook.Models;
 using PromptNotebook.Services;
 
@@ -12,6 +13,8 @@ namespace PromptNotebook.Views;
 public partial class MainWindow
 {
     private readonly DefaultIndentationStrategy _defaultIndentation = new();
+    private static readonly FontFamily MarkdownFont = new("Segoe UI");
+    private static readonly FontFamily PlainFont = new("Cascadia Mono, Consolas");
 
     private void ApplyFormat()
     {
@@ -20,6 +23,9 @@ public partial class MainWindow
         Editor.TextArea.IndentationStrategy = json ? JsonIndentation.Instance : _defaultIndentation;
         Editor.Options.IndentationSize = json ? 2 : 4;
         JsonTools.Visibility = json ? Visibility.Visible : Visibility.Collapsed;
+        var markdown = _active?.Format == FileFormat.Markdown ? _active : null;
+        Editor.FontFamily = markdown is null ? PlainFont : MarkdownFont;
+        _markdown.Apply(markdown, _settings.IsDarkMode);
     }
 
     private async void FormatJsonClick(object sender, RoutedEventArgs e) => await RunJsonActionAsync(true);
