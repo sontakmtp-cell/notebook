@@ -12,7 +12,7 @@ Mở `PromptNotebook.exe` trên Windows x64. Máy cần **.NET 8 Desktop Runtime
 
 1. Bấm **Mới** hoặc mũi tên cạnh nút này để chọn TXT, JSON hay Markdown. Bấm **Mở** để chọn một hoặc nhiều tệp. Mũi tên cạnh **Mở** hiện các tệp gần đây.
 2. Với JSON, dùng **Định dạng**, **Thu gọn** hoặc **Kiểm tra**. Khi có lỗi cú pháp, Notebook báo dòng và cột.
-3. Với Markdown, gõ cú pháp ngay trong vùng soạn thảo. Khi chuyển con trỏ sang dòng khác, Notebook ẩn các dấu Markdown và giữ cách trình bày. Đưa con trỏ trở lại dòng để sửa cú pháp. Chọn **Sao chép code** ở đầu khối code, hoặc đặt con trỏ trong khối rồi bấm `Ctrl+Shift+C`.
+3. Với TXT hoặc MD, gõ cú pháp Markdown ngay trong vùng soạn thảo. Khi chuyển con trỏ sang dòng khác, Notebook ẩn các dấu Markdown và giữ cách trình bày. Đưa con trỏ trở lại dòng để sửa cú pháp. Chọn **Sao chép code** ở đầu khối code, hoặc đặt con trỏ trong khối rồi bấm `Ctrl+Shift+C`.
 4. Bấm **Lưu** để ghi vào tệp. Mở mũi tên cạnh nhóm nút lưu để dùng **Lưu tất cả**. Notebook hỏi trước khi đóng tab còn thay đổi.
 5. Mở nút bánh răng để đổi giao diện, cỡ chữ và tự động xuống dòng.
 

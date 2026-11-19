@@ -189,7 +189,8 @@ internal static class EditorWindowTests
 
         var extra = Path.Combine(folder, "tệp mở thêm.txt");
         var longLine = new string('x', 250);
-        await File.WriteAllLinesAsync(extra, Enumerable.Range(1, 200).Select(number => $"{number:D3} {longLine}"));
+        await File.WriteAllLinesAsync(extra, Enumerable.Range(1, 200).Select(number => $"{number:D3} {longLine}")
+            .Prepend("# Tiêu đề trong TXT"));
         var existingMarkdown = tabs.Items.OfType<EditorTab>().Single(tab => tab.FilePath == markdown);
         const string unsaved = "Thay đổi chưa lưu.";
         existingMarkdown.Document.Insert(existingMarkdown.Document.TextLength, unsaved);
@@ -203,6 +204,15 @@ internal static class EditorWindowTests
         Assert(existingMarkdown.IsDirty && editor.Text.EndsWith(unsaved, StringComparison.Ordinal),
             "Opening an existing tab preserves its unsaved edits");
         editor.Undo();
+
+        SelectFileTab(tabs, extra);
+        editor.CaretOffset = editor.Document.GetLineByNumber(2).Offset;
+        await ObserveAsync(window, () => view.GetVisualLine(1)?.Elements.Any(e =>
+            e is VisualLineText && e.TextRunProperties.FontRenderingEmSize > editor.FontSize) == true,
+            "Markdown headings are rendered in TXT");
+        Assert(view.GetVisualLine(2)?.Elements.All(e => e is VisualLineText) == true &&
+            editor.Text.StartsWith("# Tiêu đề trong TXT", StringComparison.Ordinal),
+            "Plain TXT and source remain intact");
 
         await ExerciseLargeMarkdownAsync(window, folder, editor, view);
         await ExerciseSessionRestoreAsync(window, folder, markdown, json, extra, markdownEdit);

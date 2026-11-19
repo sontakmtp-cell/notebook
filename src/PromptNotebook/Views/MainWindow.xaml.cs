@@ -200,7 +200,7 @@ public partial class MainWindow : Window
 
     private void MarkdownLinkClick(object sender, MouseButtonEventArgs e)
     {
-        if (_active?.Format != FileFormat.Markdown || Keyboard.Modifiers != ModifierKeys.Control ||
+        if (_active is not { Format: FileFormat.Txt or FileFormat.Markdown } || Keyboard.Modifiers != ModifierKeys.Control ||
             Editor.GetPositionFromPoint(e.GetPosition(Editor)) is not { } point)
             return;
 

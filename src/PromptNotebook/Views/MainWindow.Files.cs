@@ -213,7 +213,7 @@ public partial class MainWindow
         var snapshot = tab.Document.CreateSnapshot();
         tab.SavedStamp = await Task.Run(() => TextFiles.WriteCheckedAsync(path, snapshot.Text, tab.Encoding, disk));
         var changedPresentation = tab.Format != format ||
-            (format == FileFormat.Markdown && tab.FilePath != path);
+            (format != FileFormat.Json && tab.FilePath != path);
         tab.CompleteSave(path, snapshot.Version!);
         if (changedPresentation && ReferenceEquals(_active, tab))
             ApplyFormat();

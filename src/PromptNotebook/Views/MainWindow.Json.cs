@@ -41,8 +41,8 @@ public partial class MainWindow
         Editor.TextArea.IndentationStrategy = json ? JsonIndentation.Instance : _defaultIndentation;
         Editor.Options.IndentationSize = json ? 2 : 4;
         JsonTools.Visibility = json ? Visibility.Visible : Visibility.Collapsed;
-        var markdown = _active?.Format == FileFormat.Markdown ? _active : null;
-        Editor.FontFamily = markdown is null ? PlainFont : MarkdownFont;
+        var markdown = _active is { Format: FileFormat.Txt or FileFormat.Markdown } ? _active : null;
+        Editor.FontFamily = _active?.Format == FileFormat.Markdown ? MarkdownFont : PlainFont;
         _markdown.Apply(markdown, _settings.IsDarkMode);
     }
 
