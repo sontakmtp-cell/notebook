@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Input;
 using ICSharpCode.AvalonEdit.Document;
 using Microsoft.Win32;
 using PromptNotebook.Models;
@@ -150,7 +151,7 @@ public partial class MainWindow
     private EditorTab? FindTab(string path) => _tabs.FirstOrDefault(tab =>
         string.Equals(tab.FilePath, path, StringComparison.OrdinalIgnoreCase));
 
-    private async void SaveClick(object sender, RoutedEventArgs e) => await SaveActiveAsync(false);
+    private async void SaveCommandExecuted(object sender, ExecutedRoutedEventArgs e) => await SaveActiveAsync(false);
     private async void SaveAsClick(object sender, RoutedEventArgs e) => await SaveActiveAsync(true);
     private async void SaveAllClick(object sender, RoutedEventArgs e) => await SaveAllAsync();
 

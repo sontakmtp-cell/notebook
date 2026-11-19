@@ -162,9 +162,6 @@ public partial class MainWindow : Window
                 case Key.F:
                     FindClick(this, e);
                     break;
-                case Key.S:
-                    _ = SaveActiveAsync(false);
-                    break;
                 case Key.Tab:
                     SelectNextTab(1);
                     break;

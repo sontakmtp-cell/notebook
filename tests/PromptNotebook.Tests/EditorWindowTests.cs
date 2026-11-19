@@ -109,8 +109,21 @@ internal static class EditorWindowTests
         Assert(editor.Text == source, "Undo restores exact Markdown");
         editor.Redo();
         Assert(editor.Text.StartsWith("# **Chào Khầy**", StringComparison.Ordinal), "Redo restores exact edit");
+
+        var activeTab = (EditorTab)tabs.SelectedItem;
+        var saveBinding = window.InputBindings.OfType<KeyBinding>()
+            .Single(binding => binding.Key == Key.S && binding.Modifiers == ModifierKeys.Control);
+        var save = (RoutedCommand)saveBinding.Command;
+        Assert(save.CanExecute(null, editor.TextArea), "Ctrl+S is available from the editor");
+        save.Execute(null, editor.TextArea);
+        await ObserveAsync(window, () => !activeTab.IsDirty, "Ctrl+S saves the edited tab");
+        Assert((await TextFiles.ReadAsync(markdown)).Text.StartsWith("# **Chào Khầy**", StringComparison.Ordinal),
+            "Ctrl+S writes the edit to disk");
+
         editor.Undo();
-        await window.SaveActiveAsync(false);
+        var findQuery = (TextBox)window.FindName("FindQuery");
+        save.Execute(null, findQuery);
+        await ObserveAsync(window, () => !activeTab.IsDirty, "Ctrl+S can save from the search toolbar");
         Assert(await TextFiles.ReadAsync(markdown) == new LoadedText(source, TextEncoding.Utf8Bom), "Reopen saved Markdown");
 
         tabs.SelectedIndex = 1;

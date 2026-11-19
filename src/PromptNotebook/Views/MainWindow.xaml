@@ -10,9 +10,11 @@
         SourceInitialized="OnSourceInitialized" AllowDrop="True"
         PreviewDragOver="FilesDragOver" PreviewDrop="FilesDrop">
     <Window.InputBindings>
+        <KeyBinding Key="S" Modifiers="Control" Command="ApplicationCommands.Save" />
         <KeyBinding Key="H" Modifiers="Control" Command="ApplicationCommands.Replace" />
     </Window.InputBindings>
     <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Save" Executed="SaveCommandExecuted" />
         <CommandBinding Command="ApplicationCommands.Replace" Executed="ReplaceCommandExecuted" />
     </Window.CommandBindings>
     <Window.Resources>
@@ -108,7 +110,7 @@
                         <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="9" Text="&#xE70D;" />
                         <Button.ContextMenu><ContextMenu Placement="Bottom" /></Button.ContextMenu>
                     </Button>
-                    <Button Style="{StaticResource ToolButton}" ToolTip="Lưu tệp (Ctrl+S)" Click="SaveClick">
+                    <Button Style="{StaticResource ToolButton}" ToolTip="Lưu tệp (Ctrl+S)" Command="ApplicationCommands.Save">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE74E;" Style="{StaticResource Icon}" Margin="0,0,7,0" />
                             <TextBlock Text="Lưu" VerticalAlignment="Center" />
