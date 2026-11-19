@@ -18,11 +18,15 @@ public sealed class MarkdownPresentation : IDisposable
     private readonly DispatcherTimer _parseTimer;
     private readonly MarkdownColorizer _colorizer;
     private readonly MarkdownImages _images;
+    private readonly Dictionary<MarkdownTableRow, CollapsedLineSection> _collapsedRows =
+        new(ReferenceEqualityComparer.Instance);
     private EditorTab? _tab;
     private string? _filePath;
     private MarkdownLayout? _layout;
     private ITextSourceVersion? _layoutVersion;
     private DocumentLine? _editingLine;
+    private MarkdownTableRow? _editingRow;
+    private bool _tablesReady;
     private bool _caretQueued;
     private bool _parsing;
     private bool _pending;
@@ -37,6 +41,7 @@ public sealed class MarkdownPresentation : IDisposable
         _view.ElementGenerators.Add(new ProjectionGenerator(this));
         _view.LineTransformers.Add(_colorizer);
         _view.BackgroundRenderers.Add(new MarkdownBackground(this));
+        _view.SizeChanged += ViewSizeChanged;
         _parseTimer = new DispatcherTimer(DispatcherPriority.Background, editor.Dispatcher);
         _parseTimer.Tick += ParseTick;
         _editor.TextArea.Caret.PositionChanged += CaretChanged;
@@ -61,7 +66,12 @@ public sealed class MarkdownPresentation : IDisposable
             return;
         }
 
+        if (_tab is not null)
+            _tab.Document.Changing -= DocumentChanging;
+        ResetTableRows();
         _tab = tab;
+        if (tab is not null)
+            tab.Document.Changing += DocumentChanging;
         _filePath = tab?.FilePath ?? tab?.RecoveredFrom;
         _images.Reset(_filePath);
         _layout = null;
@@ -146,23 +156,118 @@ public sealed class MarkdownPresentation : IDisposable
     private void Publish(MarkdownLayout layout, ITextSourceVersion version)
     {
         var viewport = EditorViewport.Capture(_view);
+        var redrawTables = _layout?.TableRows.Count > 0 || layout.TableRows.Count > 0;
         var changed = new List<VisualLine>();
-        foreach (var visual in VisibleLines())
+        if (!redrawTables)
         {
-            var line = visual.FirstDocumentLine;
-            var previous = LayoutFor(line);
-            var next = layout.GetLine(line.LineNumber);
-            if (next is null ? previous is not null : !next.HasSamePresentation(previous))
-                changed.Add(visual);
+            foreach (var visual in VisibleLines())
+            {
+                var line = visual.FirstDocumentLine;
+                var previous = LayoutFor(line);
+                var next = layout.GetLine(line.LineNumber);
+                if (next is null ? previous is not null : !next.HasSamePresentation(previous))
+                    changed.Add(visual);
+            }
         }
 
+        ResetTableRows();
         _layout = layout;
         _layoutVersion = version;
         _colorizer.ResetFences();
-        foreach (var line in changed)
-            _view.Redraw(line);
-        viewport.Restore(_view);
+        if (redrawTables)
+        {
+            _tablesReady = layout.TableRows.Count > 0;
+            _editingRow = layout.GetLine(_editor.TextArea.Caret.Line)?.TableRow;
+            foreach (var row in layout.TableRows)
+                CollapseTableRow(row);
+            _view.Redraw();
+        }
+        else
+        {
+            foreach (var line in changed)
+                _view.Redraw(line);
+        }
+        RestoreViewport(viewport);
         _view.InvalidateLayer(KnownLayer.Background);
+    }
+
+    private void ResetTableRows()
+    {
+        foreach (var section in _collapsedRows.Values)
+            section.Uncollapse();
+        _collapsedRows.Clear();
+        _editingRow = null;
+        _tablesReady = false;
+    }
+
+    private void DocumentChanging(object? sender, DocumentChangeEventArgs e)
+    {
+        if (!_tablesReady || sender is not TextDocument document || !ReferenceEquals(document, _view.Document))
+            return;
+
+        var first = document.GetLineByOffset(e.Offset).LineNumber;
+        var last = document.GetLineByOffset(e.Offset + e.RemovalLength).LineNumber;
+        if (first == last && _layout?.GetLine(first)?.TableRow is null &&
+            e.InsertedText.Text.AsSpan().IndexOfAny('\r', '\n') < 0)
+            return;
+
+        var viewport = EditorViewport.Capture(_view);
+        ResetTableRows();
+        _view.Redraw();
+        RestoreViewport(viewport);
+    }
+
+    private void CollapseTableRow(MarkdownTableRow row)
+    {
+        if (row.FirstLine == row.LastLine || ReferenceEquals(row, _editingRow))
+            return;
+        var first = _view.Document.GetLineByNumber(row.FirstLine + 1);
+        var last = _view.Document.GetLineByNumber(row.LastLine);
+        _collapsedRows.Add(row, _view.CollapseLines(first, last));
+    }
+
+    private void RestoreViewport(EditorViewport viewport)
+    {
+        if (_layout?.GetLine(viewport.TopLine)?.TableRow is { } row && _collapsedRows.ContainsKey(row))
+            viewport = viewport with { TopLine = row.FirstLine };
+        viewport.Restore(_view);
+    }
+
+    private void ViewSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged && _tablesReady)
+            _ = _editor.Dispatcher.InvokeAsync(() =>
+            {
+                if (!_tablesReady || _disposed)
+                    return;
+                var viewport = EditorViewport.Capture(_view);
+                _view.Redraw();
+                RestoreViewport(viewport);
+            }, DispatcherPriority.Background);
+    }
+
+    private void UpdateEditingRow(DocumentLine line)
+    {
+        var next = LayoutFor(line)?.TableRow;
+        if (!_tablesReady || ReferenceEquals(next, _editingRow))
+            return;
+
+        var viewport = EditorViewport.Capture(_view);
+        var previous = _editingRow;
+        _editingRow = next;
+        if (next is not null && _collapsedRows.Remove(next, out var section))
+            section.Uncollapse();
+        if (previous is not null)
+            CollapseTableRow(previous);
+        _view.Redraw();
+        RestoreViewport(viewport);
+    }
+
+    private MarkdownTableRow? ProjectedRow(DocumentLine line)
+    {
+        var row = LayoutFor(line)?.TableRow;
+        return _tablesReady && row is not null && row.FirstLine == line.LineNumber &&
+            !ReferenceEquals(row, _editingRow) ? row : null;
     }
 
     private IEnumerable<VisualLine> VisibleLines() =>
@@ -184,6 +289,7 @@ public sealed class MarkdownPresentation : IDisposable
             if (ReferenceEquals(next, previous))
                 return;
             _editingLine = next;
+            UpdateEditingRow(next);
             RedrawMarkup(previous);
             RedrawMarkup(next);
         });
@@ -269,6 +375,10 @@ public sealed class MarkdownPresentation : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        if (_tab is not null)
+            _tab.Document.Changing -= DocumentChanging;
+        _view.SizeChanged -= ViewSizeChanged;
+        ResetTableRows();
         _parseTimer.Stop();
         _parseTimer.Tick -= ParseTick;
         _editor.TextChanged -= TextChanged;
@@ -288,6 +398,7 @@ public sealed class MarkdownPresentation : IDisposable
         private int _offset;
         private int _next;
         private MarkdownLine? _layout;
+        private MarkdownTableRow? _row;
 
         public override void StartGeneration(ITextRunConstructionContext context)
         {
@@ -295,11 +406,15 @@ public sealed class MarkdownPresentation : IDisposable
             var line = context.VisualLine.FirstDocumentLine;
             _offset = line.Offset;
             _next = 0;
-            _layout = presenter.IsEditing(line) ? null : presenter.LayoutFor(line);
+            _row = presenter.ProjectedRow(line);
+            var layout = presenter.LayoutFor(line);
+            _layout = presenter.IsEditing(line) || layout?.TableRow is not null ? null : layout;
         }
 
         public override int GetFirstInterestedOffset(int startOffset)
         {
+            if (_row is not null)
+                return startOffset <= _offset ? _offset : -1;
             if (_layout is null)
                 return -1;
             var projections = _layout.Projections;
@@ -310,6 +425,14 @@ public sealed class MarkdownPresentation : IDisposable
 
         public override VisualLineElement ConstructElement(int offset)
         {
+            if (_row is { } row)
+            {
+                _row = null;
+                var length = CurrentContext.Document.GetLineByNumber(row.LastLine).EndOffset - offset;
+                var width = Math.Max(120, presenter._view.ActualWidth - 16);
+                return new InlineObjectElement(length,
+                    MarkdownTableView.Create(row, width, presenter._editor.FontSize, presenter.Brush));
+            }
             var projection = _layout!.Projections[_next++];
             return projection.Kind switch
             {
@@ -332,7 +455,6 @@ public sealed class MarkdownPresentation : IDisposable
         {
             var codeBrush = presenter.Brush("MarkdownCodeBrush");
             var quoteBrush = presenter.Brush("MarkdownQuoteBrush");
-            var header = presenter.Brush("MarkdownTableBrush");
             var border = presenter.Brush("BorderSubtleBrush");
             foreach (var visual in presenter.VisibleLines())
             {
@@ -343,17 +465,12 @@ public sealed class MarkdownPresentation : IDisposable
                 var y = visual.VisualTop - view.ScrollOffset.Y;
                 var width = view.ActualWidth;
                 var height = visual.Height;
-                var fill = layout.Fence is not null ? codeBrush : layout.IsTableHeader ? header :
-                    layout.QuoteDepth > 0 ? quoteBrush : null;
+                var fill = layout.Fence is not null ? codeBrush : layout.QuoteDepth > 0 ? quoteBrush : null;
                 if (fill is not null)
                     drawingContext.DrawRectangle(fill, null, new Rect(0, y, width, height));
 
-                if ((layout.IsRule || layout.IsTableSeparator) && !presenter.IsEditing(line) && width > 24)
-                {
-                    var length = layout.IsTableSeparator ? Math.Min(width - 24,
-                        layout.TableSeparatorColumns * view.WideSpaceWidth * 1.15) : width - 24;
-                    drawingContext.DrawRectangle(border, null, new Rect(5, y + height / 2, length, 1));
-                }
+                if (layout.IsRule && !presenter.IsEditing(line) && width > 24)
+                    drawingContext.DrawRectangle(border, null, new Rect(5, y + height / 2, width - 24, 1));
             }
         }
     }

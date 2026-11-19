@@ -3,19 +3,21 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Rendering;
 using PromptNotebook;
+using PromptNotebook.Markdown;
 using PromptNotebook.Models;
 using PromptNotebook.Services;
 using PromptNotebook.Views;
 
 internal static class EditorWindowTests
 {
-    public static Task RunAsync(bool checkClipboard)
+    public static Task RunAsync(bool checkClipboard, string? tableSample)
     {
         var result = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -31,7 +33,7 @@ internal static class EditorWindowTests
                 {
                     try
                     {
-                        await RunOnDispatcherAsync((MainWindow)app.MainWindow, temp.FullName, checkClipboard);
+                        await RunOnDispatcherAsync((MainWindow)app.MainWindow, temp.FullName, checkClipboard, tableSample);
                     }
                     catch (Exception ex)
                     {
@@ -45,7 +47,8 @@ internal static class EditorWindowTests
                     finally { app.Shutdown(); }
                 });
                 app.Run();
-                temp.Delete(recursive: true);
+                try { temp.Delete(recursive: true); }
+                catch (IOException) when (failure is not null) { }
                 if (failure is not null)
                     result.SetException(failure);
                 else
@@ -59,7 +62,7 @@ internal static class EditorWindowTests
         return result.Task;
     }
 
-    private static async Task RunOnDispatcherAsync(MainWindow window, string folder, bool checkClipboard)
+    private static async Task RunOnDispatcherAsync(MainWindow window, string folder, bool checkClipboard, string? tableSample)
     {
         Assert(window.Icon is BitmapFrame { Decoder: IconBitmapDecoder decoder } &&
             decoder.Frames.Any(frame => frame.PixelWidth == 16 && frame.PixelHeight == 16) &&
@@ -214,10 +217,68 @@ internal static class EditorWindowTests
             editor.Text.StartsWith("# Tiêu đề trong TXT", StringComparison.Ordinal),
             "Plain TXT and source remain intact");
 
+        await ExerciseTablesAsync(window, folder, editor, tableSample);
         await ExerciseLargeMarkdownAsync(window, folder, editor, view);
         await ExerciseSessionRestoreAsync(window, folder, markdown, json, extra, markdownEdit);
         Console.WriteLine("[PASS] Real WPF window, tabs, live Markdown, local images, themes, source editing and selection");
     }
+
+    private static async Task ExerciseTablesAsync(MainWindow window, string folder, TextEditor editor, string? tableSample)
+    {
+        var path = Path.Combine(folder, "table.txt");
+        await File.WriteAllTextAsync(path, MarkdownTests.MultilineTable);
+        await window.OpenFromStartupAsync([path]);
+        var view = editor.TextArea.TextView;
+        await ObserveAsync(window, () => TableGrid(view, 5) is { ColumnDefinitions.Count: 3 } &&
+            TableGrid(view, 8) is { ColumnDefinitions.Count: 3 }, "Tables render as wrapping grids in TXT");
+        var first = view.GetVisualLine(5)!;
+        Assert(first.LastDocumentLine.LineNumber == 7, "Continuation lines are displayed as part of the same row");
+        var second = TableGrid(view, 8)!;
+        var text = (TextBlock)((Border)second.Children[1]).Child;
+        Assert(text.TextWrapping == TextWrapping.Wrap && text.TextAlignment == TextAlignment.Center &&
+            text.Inlines.OfType<LineBreak>().Count() == 2 &&
+            text.Inlines.OfType<Run>().Any(run => run.Text == "Dòng đầu" && run.FontWeight == FontWeights.Bold),
+            "WPF renders the line breaks and emphasis inside a cell");
+
+        editor.CaretOffset = editor.Document.GetLineByNumber(7).Offset + 1;
+        await ObserveAsync(window, () => TableGrid(view, 5) is null &&
+            view.GetVisualLine(7)?.FirstDocumentLine.LineNumber == 7, "Entering a continuation reveals the original row");
+        var offset = editor.Document.GetLineByNumber(7).Offset + 2;
+        editor.Document.Replace(offset, " Cuối".Length, " Đã sửa");
+        Assert(editor.Text.Contains(" | Đã sửa |", StringComparison.Ordinal), "A revealed row remains editable");
+        editor.Undo();
+        Assert(editor.Text == MarkdownTests.MultilineTable, "Editing a projected table leaves source unchanged after undo");
+        editor.CaretOffset = 0;
+        await ObserveAsync(window, () => TableGrid(view, 5) is not null, "Leaving the row restores the grid");
+
+        if (tableSample is not null)
+        {
+            var sample = await TextFiles.ReadAsync(tableSample);
+            var copy = Path.Combine(folder, "table-sample.md");
+            await TextFiles.WriteAsync(copy, sample.Text, sample.Encoding);
+            await window.OpenFromStartupAsync([copy]);
+            var layout = MarkdownLayout.Parse(editor.Text);
+            Assert(layout.TableRows.Count > 0 && editor.Text == sample.Text, "Sample tables retain the exact source document");
+            foreach (var row in layout.TableRows)
+            {
+                editor.ScrollToLine(row.FirstLine);
+                await ObserveAsync(window, () => TableGrid(view, row.FirstLine)?.ColumnDefinitions.Count == row.Cells.Length,
+                    $"Sample table row starting on line {row.FirstLine} renders all columns");
+            }
+            var last = layout.TableRows[^1].FirstLine;
+            var originalWidth = window.Width;
+            var gridWidth = TableGrid(view, last)!.Width;
+            window.Width = window.MinWidth;
+            await ObserveAsync(window, () => TableGrid(view, last) is { } grid && grid.Width < gridWidth,
+                "The sample's wide table resizes with the editor");
+            window.Width = originalWidth;
+            Console.WriteLine($"[PASS] User sample rendered {layout.TableRows.Count} table rows, including {layout.TableRows.Count(row => row.IsHeader)} headers");
+        }
+        Console.WriteLine("[PASS] Multiline tables render aligned cells and reveal editable original rows");
+    }
+
+    private static Grid? TableGrid(TextView view, int line) => view.GetVisualLine(line)?.Elements
+        .OfType<InlineObjectElement>().Select(element => element.Element).OfType<Grid>().SingleOrDefault();
 
     private static void ExerciseReplace(MainWindow window, TextEditor editor, ListBox tabs)
     {

@@ -34,7 +34,7 @@ internal sealed class MarkdownColorizer(MarkdownPresentation presenter) : Docume
 
     protected override void ColorizeLine(DocumentLine line)
     {
-        if (presenter.LayoutFor(line) is not { } layout)
+        if (presenter.LayoutFor(line) is not { TableRow: null } layout)
             return;
 
         if (layout.Heading > 0)
@@ -46,9 +46,8 @@ internal sealed class MarkdownColorizer(MarkdownPresentation presenter) : Docume
                 SetTypeface(element, weight: FontWeights.Bold);
             });
         }
-        if (layout.Fence is not null || layout.IsTable)
-            ChangeLinePart(line.Offset, line.EndOffset,
-                element => SetTypeface(element, Mono, layout.IsTableHeader ? FontWeights.SemiBold : null));
+        if (layout.Fence is not null)
+            ChangeLinePart(line.Offset, line.EndOffset, element => SetTypeface(element, Mono));
         if (layout.QuoteDepth > 0)
             ChangeLinePart(line.Offset, line.EndOffset,
                 element => element.TextRunProperties.SetForegroundBrush(presenter.Brush("SecondaryTextBrush")));
@@ -59,7 +58,7 @@ internal sealed class MarkdownColorizer(MarkdownPresentation presenter) : Docume
 
         foreach (var projection in layout.Projections)
         {
-            if (presenter.IsEditing(line) || projection.Kind is ProjectionKind.Marker or ProjectionKind.TableDivider or ProjectionKind.Image)
+            if (presenter.IsEditing(line) || projection.Kind is ProjectionKind.Marker or ProjectionKind.Image)
                 ChangeLinePart(line.Offset + projection.Start, line.Offset + projection.End,
                     element => element.TextRunProperties.SetForegroundBrush(presenter.Brush("SecondaryTextBrush")));
         }

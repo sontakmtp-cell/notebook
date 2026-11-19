@@ -56,11 +56,14 @@ internal static class MarkdownTests
         Assert(layout.GetLine(17)?.Projections.Single().Kind == ProjectionKind.CopyCode, "Code copy affordance");
         Assert(layout.GetLine(18) is { CodeLine: 1, CodeStart: 0, Fence.Code: """{"ok": true}""" }, "Fence source mapping");
         Assert(layout.GetLine(19)?.Projections.Single().Length == 6, "Closing fence with trailing whitespace");
-        Assert(layout.GetLine(21) is { IsTableHeader: true } header && header.Projections.Count == 3, "Styled table header");
-        Assert(layout.GetLine(22)?.IsTableSeparator == true && layout.GetLine(23)?.IsTable == true, "Table separator and body");
+        var header = layout.GetLine(21)?.TableRow;
+        Assert(header is { IsHeader: true, Cells.Length: 2 } && ReferenceEquals(header, layout.GetLine(22)?.TableRow),
+            "Styled table header consumes the Markdown delimiter");
+        Assert(layout.GetLine(23)?.TableRow is { IsHeader: false, Cells.Length: 2 }, "Table body");
         Assert(layout.GetLine(25)?.Heading == 2 && layout.GetLine(26)?.Projections.Single().Kind == ProjectionKind.Hidden,
             $"Setext heading (heading={layout.GetLine(25)?.Heading}, separator={layout.GetLine(26)?.Heading}, rule={layout.GetLine(26)?.IsRule})");
         Assert(layout.GetLine(29) is { CodeStart: 2, Fence.Code: "string tên = \"Chữ\";" }, "Nested fence source and copy text");
+        CheckMultilineTables();
 
         foreach (var specimen in new[] { source, "#", ">\r", "`x\ny`", "***both***", "````\r\n\r\n    ",
             "````\n```not a closer\n\n```\n````", "a | b\n--- | ---\nc | d", "|a|b|\n|-|-|\n| | |",
@@ -93,6 +96,44 @@ internal static class MarkdownTests
         }
         Console.WriteLine("[PASS] Markdown AST spans, heading and inline styles, quotes, lists, links, images, rules, fences and tables");
     }
+
+    internal const string MultilineTable = """
+        Trước bảng.
+
+        | Mục | Giá trị | Ghi chú |
+        | --- | :---: | ---: |
+        | **Một** | Đầu
+
+         | Cuối |
+        | Hai | **Dòng đầu**<br>
+
+        <br />Dòng sau | Chữ \| trong ô |
+        | Ba | `x\|y` | Ô cuối |
+
+        Đoạn văn sau bảng.
+        """;
+
+    private static void CheckMultilineTables()
+    {
+        var layout = MarkdownLayout.Parse(MultilineTable);
+        Assert(layout.TableRows.Count == 4, "A table can recover both types of split row");
+        var first = layout.TableRows[1];
+        Assert(first.FirstLine == 5 && first.LastLine == 7 &&
+            CellText(first, 0) == "Một" && CellText(first, 1) == "Đầu" && CellText(first, 2) == "Cuối",
+            "An indented continuation is joined into the correct cell");
+        var second = layout.TableRows[2];
+        Assert(second.FirstLine == 8 && second.LastLine == 10 &&
+            CellText(second, 1).Replace(" ", "") == "Dòngđầu\n\nDòngsau" && CellText(second, 2) == "Chữ | trong ô",
+            "BR variants render as breaks inside one cell while escaped pipes stay literal");
+        Assert(CellText(layout.TableRows[3], 1) == "x|y" && layout.GetLine(13)?.TableRow is null,
+            "Code spans keep escaped pipes, and the following paragraph stays outside the table");
+        const string ordinary = "| A | B |\n| --- | --- |\n| one |\n\n | new | row |";
+        Assert(MarkdownLayout.Parse(ordinary).TableRows.Count == 2,
+            "A complete short row does not absorb a separated table-like paragraph");
+    }
+
+    private static string CellText(MarkdownTableRow row, int column) =>
+        string.Concat(row.Cells[column].Select(part => part.IsBreak ? "\n" : part.Text));
 
     private static void Assert(bool test, string label)
     {

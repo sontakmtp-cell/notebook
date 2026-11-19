@@ -82,7 +82,8 @@ foreach (var dark in new[] { true, false })
 Console.WriteLine("[PASS] JSON format / minify, validation, indentation and both color palettes");
 MarkdownTests.Run();
 await RecoveryTests.RunAsync();
-await EditorWindowTests.RunAsync(args.Contains("--clipboard", StringComparer.Ordinal));
+await EditorWindowTests.RunAsync(args.Contains("--clipboard", StringComparer.Ordinal),
+    Environment.GetEnvironmentVariable("NOTEBOOK_TEST_TABLE_SAMPLE"));
 
 static void Assert(bool condition, string description)
 {

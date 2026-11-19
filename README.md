@@ -29,6 +29,8 @@ Mở `PromptNotebook.exe` trên Windows x64. Máy cần **.NET 8 Desktop Runtime
 
 Trong thanh **Ctrl+H**, dùng **Thay** để sửa một chỗ hoặc **Thay tất cả** cho tab hiện tại. Để trống **Thay bằng** nếu muốn xóa chữ tìm được. Một lần **Ctrl+Z** hoàn tác toàn bộ thao tác **Thay tất cả**.
 
+Nội dung dài trong bảng Markdown tự xuống dòng trong ô. Thẻ `<br>` tạo ngắt dòng trong ô. Đặt con trỏ vào hàng để hiện cú pháp gốc khi cần sửa.
+
 Ảnh Markdown hỗ trợ các tệp ảnh cục bộ mà Windows đọc được. Lưu tệp Markdown trước khi dùng đường dẫn ảnh tương đối. Với ảnh trên web, Notebook hiện mô tả thay thế. Code fence có màu cú pháp cho các ngôn ngữ có sẵn như JSON, C#, JavaScript, Python và XML. Khối lớn vẫn có nền riêng và chữ đơn cách.
 
 Notebook giữ bản nháp sau khi ngừng gõ. Sau khi ứng dụng đóng bất ngờ, bản nháp mở lại trong tab có nhãn **Khôi phục**. Dùng **Lưu** để chọn đường dẫn. Cài đặt, tệp gần đây và bản nháp nằm trong `%LocalAppData%\NotebookEditor`. Dữ liệu Prompt Notebook 1.x vẫn nằm trong `%LocalAppData%\PromptNotebook`.

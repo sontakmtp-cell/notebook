@@ -7,9 +7,10 @@ using Markdig.Syntax.Inlines;
 
 namespace PromptNotebook.Markdown;
 
+[Flags]
 public enum InlineStyle { Bold = 1, Italic = 2, Strike = 4, Code = 8, Link = 16 }
 
-public enum ProjectionKind { Hidden, Marker, TableDivider, Image, CopyCode }
+public enum ProjectionKind { Hidden, Marker, Image, CopyCode }
 
 public readonly record struct StyledRun(int Start, int Length, InlineStyle Style);
 public readonly record struct MarkdownLink(int Start, int End, string Address);
@@ -30,10 +31,7 @@ public sealed class MarkdownLine(string source)
     public int Heading { get; set; }
     public int QuoteDepth { get; set; }
     public bool IsRule { get; set; }
-    public bool IsTable { get; set; }
-    public bool IsTableHeader { get; set; }
-    public bool IsTableSeparator { get; set; }
-    public int TableSeparatorColumns { get; set; }
+    internal MarkdownTableRow? TableRow { get; set; }
     public MarkdownFence? Fence { get; set; }
     public int CodeLine { get; set; }
     public int CodeStart { get; set; }
@@ -43,8 +41,7 @@ public sealed class MarkdownLine(string source)
 
     public bool HasSamePresentation(MarkdownLine? other) => other is not null &&
         Source == other.Source && Heading == other.Heading && QuoteDepth == other.QuoteDepth &&
-        IsRule == other.IsRule && IsTable == other.IsTable && IsTableHeader == other.IsTableHeader &&
-        IsTableSeparator == other.IsTableSeparator && TableSeparatorColumns == other.TableSeparatorColumns &&
+        IsRule == other.IsRule && ReferenceEquals(TableRow, other.TableRow) &&
         CodeLine == other.CodeLine && CodeStart == other.CodeStart &&
         Fence?.CodeHash == other.Fence?.CodeHash && Fence?.Language == other.Fence?.Language &&
         Styles.SequenceEqual(other.Styles) && Projections.SequenceEqual(other.Projections) &&
@@ -55,7 +52,13 @@ public sealed class MarkdownLayout
 {
     private readonly Dictionary<int, MarkdownLine> _lines;
 
-    internal MarkdownLayout(Dictionary<int, MarkdownLine> lines) => _lines = lines;
+    internal MarkdownLayout(Dictionary<int, MarkdownLine> lines, IReadOnlyList<MarkdownTableRow>? tables = null)
+    {
+        _lines = lines;
+        TableRows = tables ?? [];
+    }
+
+    internal IReadOnlyList<MarkdownTableRow> TableRows { get; }
 
     public static MarkdownLayout Parse(string source) => new LayoutBuilder(source).Build();
 
@@ -75,6 +78,7 @@ file sealed class LayoutBuilder
     private readonly int[] _starts;
     private readonly int[] _ends;
     private readonly Dictionary<int, MarkdownLine> _lines = [];
+    private readonly List<MarkdownTableRow> _tableRows = [];
 
     public LayoutBuilder(string source)
     {
@@ -108,7 +112,7 @@ file sealed class LayoutBuilder
                 AddQuoteMarkers(index, line);
             SortProjections(line.Projections);
         }
-        return new MarkdownLayout(_lines);
+        return new MarkdownLayout(_lines, _tableRows);
     }
 
     private static void SortProjections(List<Projection> projections)
@@ -167,7 +171,7 @@ file sealed class LayoutBuilder
                 break;
             case Table table:
                 VisitTable(table);
-                break;
+                return;
         }
 
         if (block is ContainerBlock container)
@@ -309,100 +313,15 @@ file sealed class LayoutBuilder
 
     private void VisitTable(Table table)
     {
-        var rows = table.OfType<TableRow>().ToArray();
-        if (rows.Length == 0)
-            return;
-
-        var pipesByRow = new int[rows.Length][];
-        var widths = new int[table.ColumnDefinitions.Count];
-        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+        foreach (var row in MarkdownTableReader.Read(table, _starts.Length,
+            index => _source[_starts[index].._ends[index]], Pipeline))
         {
-            var row = rows[rowIndex];
-            var line = Line(row.Line);
-            line.IsTable = true;
-            line.IsTableHeader = row.IsHeader;
-            var pipes = TablePipes(line.Source);
-            pipesByRow[rowIndex] = pipes;
-            var (_, firstColumn, start) = TableStart(line.Source, pipes);
-            for (var i = firstColumn; i <= pipes.Length && i - firstColumn < widths.Length; i++)
-            {
-                var column = i - firstColumn;
-                var end = i < pipes.Length ? pipes[i] : line.Source.Length;
-                widths[column] = Math.Max(widths[column], DisplayWidth(line.Source.AsSpan(start, end - start).Trim()));
-                start = end + 1;
-            }
+            if (Line(row.FirstLine - 1).TableRow is not null)
+                break;
+            _tableRows.Add(row);
+            for (var line = row.FirstLine; line <= row.LastLine; line++)
+                Line(line - 1).TableRow = row;
         }
-
-        var separator = rows[0].Line + 1;
-        if (separator <= LineIndex(table.Span.End))
-        {
-            var line = Line(separator);
-            line.IsTableSeparator = true;
-            line.TableSeparatorColumns = widths.Sum(width => Math.Min(width, 100) + 3) + 1;
-            var first = _starts[separator];
-            while (first < _ends[separator] && _source[first] is ' ' or '\t' or '>')
-                first++;
-            Project(first, _ends[separator], ProjectionKind.Hidden);
-        }
-
-        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
-        {
-            var lineIndex = rows[rowIndex].Line;
-            var line = Line(lineIndex).Source;
-            var pipes = pipesByRow[rowIndex];
-            var (leading, firstColumn, start) = TableStart(line, pipes);
-            for (var i = 0; i < pipes.Length; i++)
-            {
-                var pipe = pipes[i];
-                var replaceStart = pipe;
-                var replaceEnd = pipe + 1;
-                var padding = 0;
-                if (!(leading && i == 0))
-                {
-                    while (replaceStart > start && line[replaceStart - 1] is ' ' or '\t')
-                        replaceStart--;
-                    var column = i - firstColumn;
-                    if (column < widths.Length)
-                        padding = Math.Clamp(widths[column] - DisplayWidth(line.AsSpan(start, pipe - start).Trim()) + 1, 1, 36);
-                }
-                while (replaceEnd < line.Length && line[replaceEnd] is ' ' or '\t')
-                    replaceEnd++;
-                var suffix = replaceEnd < line.Length && line[replaceEnd] != '|' ? " " : "";
-                Project(_starts[lineIndex] + replaceStart, _starts[lineIndex] + replaceEnd,
-                    ProjectionKind.TableDivider, new string('\u00a0', padding) + "│" + suffix);
-                start = replaceEnd;
-            }
-        }
-    }
-
-    private static (bool Leading, int FirstColumn, int Start) TableStart(string source, int[] pipes)
-    {
-        var start = 0;
-        while (start < source.Length && source[start] is ' ' or '\t' or '>')
-            start++;
-        var leading = pipes.Length > 0 && pipes[0] == start;
-        return leading ? (true, 1, start + 1) : (false, 0, start);
-    }
-
-    private static int[] TablePipes(string line)
-    {
-        var pipes = new List<int>();
-        var escaped = false;
-        for (var i = 0; i < line.Length; i++)
-        {
-            if (line[i] == '|' && !escaped)
-                pipes.Add(i);
-            escaped = line[i] == '\\' && !escaped;
-        }
-        return pipes.ToArray();
-    }
-
-    private static int DisplayWidth(ReadOnlySpan<char> text)
-    {
-        var width = 0;
-        foreach (var rune in text.EnumerateRunes())
-            width += rune.Value is >= 0x2E80 and < 0xA500 or >= 0x1F300 ? 2 : 1;
-        return width;
     }
 
     private void VisitInline(Inline inline)
